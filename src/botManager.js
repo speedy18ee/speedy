@@ -128,7 +128,9 @@ class BotManager extends EventEmitter {
           endpoint,
           sessionId,
           channelId,
-          userId: client.user.id
+          userId: client.user.id,
+          accountId: botEntry.accountId,
+          ownerId: botEntry.account?.ownerId || null
         });
       }
     };
@@ -353,7 +355,8 @@ class BotManager extends EventEmitter {
     this.lavalink.createPlayer(guildId, {
       accountId,
       userId: client.user.id,
-      channelId: channel.id
+      channelId: channel.id,
+      ownerId: botEntry.account?.ownerId || null
     });
 
     this.emit("botVoice", { accountId, currentVoice: botEntry.currentVoice });
@@ -386,7 +389,7 @@ class BotManager extends EventEmitter {
       }
 
       // Destroy Lavalink player
-      await this.lavalink.destroyPlayer(guildId);
+      await this.lavalink.destroyPlayer(guildId, accountId, botEntry.account?.ownerId);
     }
 
     botEntry.currentVoice = null;

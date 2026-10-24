@@ -93,9 +93,9 @@ class LavalinkSession extends EventEmitter {
         break;
 
       case 'playerUpdate':
-        if (msg.guildId && this.client.players.has(msg.guildId)) {
-          const player = this.client.players.get(msg.guildId);
-          if (msg.state) {
+        if (msg.guildId) {
+          const player = this.client.getPlayer(msg.guildId, this.userId);
+          if (player && msg.state) {
             player.position = msg.state.position || 0;
             player.ping = msg.state.ping || 0;
             player.connected = msg.state.connected ?? true;
@@ -105,7 +105,7 @@ class LavalinkSession extends EventEmitter {
         break;
 
       case 'event':
-        this.client.handleEvent(msg);
+        this.client.handleEvent(msg, this.userId);
         break;
     }
   }
@@ -206,18 +206,18 @@ class LavalinkClient extends EventEmitter {
     return this.defaultSession;
   }
 
-  handleEvent(event) {
+  handleEvent(event, sessionUserId = null) {
     const { type, guildId } = event;
-    const player = this.players.get(guildId);
+    const player = this.getPlayer(guildId, sessionUserId);
     if (!player) return;
 
-    logger.info('MUSIC', `Lavalink event: ${type} for guild ${guildId}`);
+    logger.info('MUSIC', `Lavalink event: ${type} for guild ${guildId} [bot: ${player.accountId || sessionUserId || 'unknown'}]`);
 
     switch (type) {
       case 'TrackStartEvent':
         player.playing = true;
         player.paused = false;
-        this.emit('trackStart', { player, track: event.track });
+        this.emit('trackStart', { player, track: event.track, ownerId: player.ownerId, accountId: player.accountId });
         break;
 
       case 'TrackEndEvent':
@@ -226,12 +226,12 @@ class LavalinkClient extends EventEmitter {
 
       case 'TrackExceptionEvent':
         logger.error('MUSIC', `Track exception: ${event.exception?.message || 'Unknown'}`);
-        this.playNext(guildId);
+        this.playNext(player);
         break;
 
       case 'TrackStuckEvent':
         logger.warn('MUSIC', `Track stuck at ${event.thresholdMs}ms, skipping...`);
-        this.playNext(guildId);
+        this.playNext(player);
         break;
 
       case 'WebSocketClosedEvent':
@@ -245,7 +245,7 @@ class LavalinkClient extends EventEmitter {
     if (event.reason === 'replaced') return;
 
     if (player.loop === 'track' && player.currentTrack) {
-      this.play(player.guildId, player.currentTrack, { noReplace: false });
+      this.play(player.guildId, player.currentTrack, { noReplace: false, accountId: player.accountId, userId: player.userId, ownerId: player.ownerId });
       return;
     }
 
@@ -253,12 +253,15 @@ class LavalinkClient extends EventEmitter {
       player.queue.push(player.currentTrack);
     }
 
-    this.playNext(player.guildId);
+    this.playNext(player);
   }
 
-  async playNext(guildId) {
-    const player = this.players.get(guildId);
+  async playNext(playerOrGuildId, identifier = null, ownerId = null) {
+    const player = (typeof playerOrGuildId === 'object' && playerOrGuildId !== null)
+      ? playerOrGuildId
+      : this.getPlayer(playerOrGuildId, identifier, ownerId);
     if (!player) return;
+    const guildId = player.guildId;
 
     if (player.queue.length > 0) {
       const nextTrack = player.queue.shift();
@@ -273,6 +276,7 @@ class LavalinkClient extends EventEmitter {
       player.playing = true;
       player.paused = false;
       this.emit('queueUpdate', player);
+      this.emit('trackStart', { player, track: nextTrack, ownerId: player.ownerId, accountId: player.accountId });
     } else {
       player.currentTrack = null;
       player.playing = false;
@@ -350,17 +354,21 @@ class LavalinkClient extends EventEmitter {
 
   // --- Voice State Update for a Guild ---
   async updateVoice(guildId, voiceData) {
-    let player = this.players.get(guildId);
+    let player = this.getPlayer(guildId, voiceData.accountId || voiceData.userId, voiceData.ownerId);
     if (!player) {
       player = this.createPlayer(guildId, {
+        accountId: voiceData.accountId,
         userId: voiceData.userId,
-        channelId: voiceData.channelId
+        channelId: voiceData.channelId,
+        ownerId: voiceData.ownerId
       });
     }
 
     player.voice = voiceData;
     if (voiceData.userId) player.userId = voiceData.userId;
     if (voiceData.channelId) player.channelId = voiceData.channelId;
+    if (voiceData.accountId) player.accountId = voiceData.accountId;
+    if (voiceData.ownerId) player.ownerId = voiceData.ownerId;
 
     const session = this.getSessionForUser(player.userId);
     if (!session || !session.sessionId) {
@@ -388,28 +396,39 @@ class LavalinkClient extends EventEmitter {
   }
 
   async resyncPlayersForUser(userId) {
-    for (const [guildId, player] of this.players.entries()) {
+    for (const [key, player] of this.players.entries()) {
       if (player.userId === userId && player.voice?.token && player.voice?.endpoint) {
         try {
-          await this.updateVoice(guildId, player.voice);
+          await this.updateVoice(player.guildId, player.voice);
         } catch (e) {}
       }
     }
   }
 
   createPlayer(guildId, options = {}) {
-    if (this.players.has(guildId)) {
-      const p = this.players.get(guildId);
-      if (options.accountId) p.accountId = options.accountId;
-      if (options.channelId) p.channelId = options.channelId;
-      if (options.userId) p.userId = options.userId;
-      return p;
+    const accountId = options.accountId || null;
+    const userId = options.userId || null;
+    const ownerId = options.ownerId || null;
+    const idKey = accountId || userId;
+    const key = idKey ? `${guildId}:${idKey}` : `${guildId}`;
+
+    let player = this.getPlayer(guildId, idKey, ownerId);
+
+    if (player) {
+      if (accountId) player.accountId = accountId;
+      if (options.channelId) player.channelId = options.channelId;
+      if (userId) player.userId = userId;
+      if (ownerId) player.ownerId = ownerId;
+      if (!this.players.has(key)) this.players.set(key, player);
+      return player;
     }
 
-    const player = {
+    player = {
       guildId,
-      accountId: options.accountId || null,
-      userId: options.userId || null,
+      playerKey: key,
+      accountId: accountId,
+      ownerId: ownerId,
+      userId: userId,
       channelId: options.channelId || null,
       playing: false,
       paused: false,
@@ -432,12 +451,49 @@ class LavalinkClient extends EventEmitter {
       }
     };
 
-    this.players.set(guildId, player);
+    this.players.set(key, player);
+    if (accountId) this.players.set(`${guildId}:${accountId}`, player);
+    if (userId) this.players.set(`${guildId}:${userId}`, player);
+    if (!this.players.has(guildId)) this.players.set(guildId, player);
     return player;
   }
 
-  getPlayer(guildId) {
-    return this.players.get(guildId);
+  getPlayer(guildId, identifier = null, ownerId = null) {
+    if (identifier) {
+      const compositeKey = `${guildId}:${identifier}`;
+      if (this.players.has(compositeKey)) {
+        const p = this.players.get(compositeKey);
+        if (!ownerId || !p.ownerId || p.ownerId === ownerId) return p;
+      }
+      if (this.players.has(identifier)) {
+        const p = this.players.get(identifier);
+        if (!ownerId || !p.ownerId || p.ownerId === ownerId) return p;
+      }
+    }
+
+    // Search by guildId and matching identifier and ownerId
+    for (const [k, p] of this.players.entries()) {
+      if (p.guildId === guildId) {
+        if (identifier) {
+          if (p.accountId === identifier || p.userId === identifier) {
+            if (!ownerId || !p.ownerId || p.ownerId === ownerId) {
+              return p;
+            }
+          }
+        } else if (ownerId) {
+          if (p.ownerId === ownerId) {
+            return p;
+          }
+        }
+      }
+    }
+
+    // Fallback only if neither identifier nor ownerId was requested
+    if (!identifier && !ownerId) {
+      return this.players.get(guildId) || null;
+    }
+
+    return null;
   }
 
   async sendPlayerUpdate(guildId, data, userId = null) {
@@ -487,8 +543,8 @@ class LavalinkClient extends EventEmitter {
     }
   }
 
-  async pause(guildId, paused = true) {
-    const player = this.players.get(guildId);
+  async pause(guildId, paused = true, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) return;
 
     await this.sendPlayerUpdate(guildId, { paused }, player.userId);
@@ -496,14 +552,14 @@ class LavalinkClient extends EventEmitter {
     this.emit('playerUpdate', player);
   }
 
-  async skip(guildId) {
-    const player = this.players.get(guildId);
+  async skip(guildId, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) return;
-    await this.playNext(guildId);
+    await this.playNext(player);
   }
 
-  async stop(guildId) {
-    const player = this.players.get(guildId);
+  async stop(guildId, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) return;
 
     player.queue = [];
@@ -515,6 +571,7 @@ class LavalinkClient extends EventEmitter {
       track: { encoded: null }
     }, player.userId);
     this.emit('queueUpdate', player);
+    this.emit('playerUpdate', player);
   }
 
   buildFiltersPayload(player) {
@@ -683,10 +740,10 @@ class LavalinkClient extends EventEmitter {
     return filtersPayload;
   }
 
-  async setVolume(guildId, volume) {
-    let player = this.players.get(guildId);
+  async setVolume(guildId, volume, identifier = null, ownerId = null) {
+    let player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) {
-      player = this.createPlayer(guildId);
+      player = this.createPlayer(guildId, { accountId: identifier, ownerId });
     }
 
     const vol = parseInt(volume, 10);
@@ -709,8 +766,8 @@ class LavalinkClient extends EventEmitter {
     this.emit('playerUpdate', player);
   }
 
-  async seek(guildId, positionMs) {
-    const player = this.players.get(guildId);
+  async seek(guildId, positionMs, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player || !player.currentTrack) return;
 
     await this.sendPlayerUpdate(guildId, { position: positionMs }, player.userId);
@@ -718,8 +775,8 @@ class LavalinkClient extends EventEmitter {
     this.emit('playerUpdate', player);
   }
 
-  setLoop(guildId, mode) {
-    const player = this.players.get(guildId);
+  setLoop(guildId, mode, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) return;
 
     if (['off', 'track', 'queue'].includes(mode)) {
@@ -728,10 +785,10 @@ class LavalinkClient extends EventEmitter {
     }
   }
 
-  async applyFilters(guildId, filterName, enabled) {
-    let player = this.players.get(guildId);
+  async applyFilters(guildId, filterName, enabled, identifier = null, ownerId = null) {
+    let player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) {
-      player = this.createPlayer(guildId);
+      player = this.createPlayer(guildId, { accountId: identifier, ownerId });
     }
 
     player.filters[filterName] = enabled;
@@ -750,8 +807,8 @@ class LavalinkClient extends EventEmitter {
     this.emit('playerUpdate', player);
   }
 
-  removeQueueTrack(guildId, index) {
-    const player = this.players.get(guildId);
+  removeQueueTrack(guildId, index, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player || !player.queue[index]) return;
 
     const removed = player.queue.splice(index, 1)[0];
@@ -759,16 +816,16 @@ class LavalinkClient extends EventEmitter {
     return removed;
   }
 
-  clearQueue(guildId) {
-    const player = this.players.get(guildId);
+  clearQueue(guildId, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) return;
 
     player.queue = [];
     this.emit('queueUpdate', player);
   }
 
-  async destroyPlayer(guildId) {
-    const player = this.players.get(guildId);
+  async destroyPlayer(guildId, identifier = null, ownerId = null) {
+    const player = this.getPlayer(guildId, identifier, ownerId);
     if (!player) return;
 
     try {
@@ -779,8 +836,19 @@ class LavalinkClient extends EventEmitter {
       }
     } catch (e) {}
 
-    this.players.delete(guildId);
-    this.emit('playerDestroy', guildId);
+    if (player.playerKey) this.players.delete(player.playerKey);
+    if (player.accountId) this.players.delete(`${guildId}:${player.accountId}`);
+    if (player.userId) this.players.delete(`${guildId}:${player.userId}`);
+    if (this.players.get(guildId) === player) {
+      this.players.delete(guildId);
+      for (const p of this.players.values()) {
+        if (p.guildId === guildId) {
+          this.players.set(guildId, p);
+          break;
+        }
+      }
+    }
+    this.emit('playerDestroy', { guildId, accountId: player.accountId, ownerId: player.ownerId });
   }
 }
 

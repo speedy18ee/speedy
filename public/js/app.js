@@ -256,25 +256,37 @@ function handleServerEvent(type, data) {
 
     case 'playerUpdate':
       if (data.guildId === state.selectedGuildId) {
-        updatePlayerUI(data);
+        const pBotId = data.accountId || data.player?.accountId;
+        if (!pBotId || !state.selectedMusicBotId || pBotId === state.selectedMusicBotId) {
+          updatePlayerUI(data.player || data);
+        }
       }
       break;
 
     case 'trackStart':
       if (data.player?.guildId === state.selectedGuildId) {
-        updateNowPlayingUI(data.player);
+        const pBotId = data.accountId || data.player?.accountId;
+        if (!pBotId || !state.selectedMusicBotId || pBotId === state.selectedMusicBotId) {
+          updateNowPlayingUI(data.player);
+        }
       }
       break;
 
     case 'queueUpdate':
       if (data.guildId === state.selectedGuildId) {
-        renderQueue(data);
+        const pBotId = data.accountId || data.player?.accountId;
+        if (!pBotId || !state.selectedMusicBotId || pBotId === state.selectedMusicBotId) {
+          renderQueue(data.player || data);
+        }
       }
       break;
 
     case 'queueEnd':
       if (data.guildId === state.selectedGuildId) {
-        resetPlayerUI();
+        const pBotId = data.accountId || data.player?.accountId;
+        if (!pBotId || !state.selectedMusicBotId || pBotId === state.selectedMusicBotId) {
+          resetPlayerUI();
+        }
       }
       break;
 
@@ -898,7 +910,8 @@ async function loadActivePlayer() {
   if (!state.selectedGuildId) return;
 
   try {
-    const res = await fetch(`/api/music/player/${state.selectedGuildId}`);
+    const url = `/api/music/player/${state.selectedGuildId}${state.selectedMusicBotId ? `?accountId=${state.selectedMusicBotId}` : ''}`;
+    const res = await fetch(url);
     const data = await res.json();
     if (data.success && data.player) {
       updateNowPlayingUI(data.player);
@@ -1051,7 +1064,7 @@ document.getElementById('btn-play-pause')?.addEventListener('click', async () =>
     await fetch(`/api/music/player/${state.selectedGuildId}/pause`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paused: !isPaused })
+      body: JSON.stringify({ paused: !isPaused, accountId: state.selectedMusicBotId })
     });
     state.activePlayer.paused = !isPaused;
     updatePlayPauseButton();
@@ -1062,7 +1075,11 @@ document.getElementById('btn-play-pause')?.addEventListener('click', async () =>
 document.getElementById('btn-skip')?.addEventListener('click', async () => {
   if (!state.selectedGuildId) return;
   try {
-    await fetch(`/api/music/player/${state.selectedGuildId}/skip`, { method: 'POST' });
+    await fetch(`/api/music/player/${state.selectedGuildId}/skip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: state.selectedMusicBotId })
+    });
     showToast('Skipped to next track', 'info');
   } catch (e) {}
 });
@@ -1071,7 +1088,11 @@ document.getElementById('btn-skip')?.addEventListener('click', async () => {
 document.getElementById('btn-stop-track')?.addEventListener('click', async () => {
   if (!state.selectedGuildId) return;
   try {
-    await fetch(`/api/music/player/${state.selectedGuildId}/stop`, { method: 'POST' });
+    await fetch(`/api/music/player/${state.selectedGuildId}/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: state.selectedMusicBotId })
+    });
     resetPlayerUI();
     showToast('Playback stopped & queue cleared', 'info');
   } catch (e) {}
@@ -1089,7 +1110,7 @@ document.getElementById('btn-loop-mode')?.addEventListener('click', async () => 
     await fetch(`/api/music/player/${state.selectedGuildId}/loop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: nextMode })
+      body: JSON.stringify({ mode: nextMode, accountId: state.selectedMusicBotId })
     });
     state.activePlayer.loop = nextMode;
     document.getElementById('loop-mode-text').textContent = nextMode.toUpperCase();
@@ -1107,7 +1128,7 @@ async function setMusicVolume(val) {
     await fetch(`/api/music/player/${state.selectedGuildId}/volume`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ volume: num })
+      body: JSON.stringify({ volume: num, accountId: state.selectedMusicBotId })
     });
     showToast(`Volume set to ${num}%`, 'info');
   } catch (e) {}
@@ -1130,7 +1151,7 @@ document.querySelectorAll('.filter-pill').forEach(btn => {
       await fetch(`/api/music/player/${state.selectedGuildId}/filter`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filterName, enabled: newState })
+        body: JSON.stringify({ filterName, enabled: newState, accountId: state.selectedMusicBotId })
       });
       btn.classList.toggle('active', newState);
       if (filterName === 'extremeLoud') {
@@ -1180,7 +1201,7 @@ document.getElementById('seekbar-track')?.addEventListener('click', async (e) =>
     await fetch(`/api/music/player/${state.selectedGuildId}/seek`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ position: targetMs })
+      body: JSON.stringify({ position: targetMs, accountId: state.selectedMusicBotId })
     });
     state.currentTrackPosition = targetMs;
     updateSeekbarVisual();
@@ -1191,10 +1212,12 @@ document.getElementById('seekbar-track')?.addEventListener('click', async (e) =>
 document.getElementById('btn-clear-queue')?.addEventListener('click', async () => {
   if (!state.selectedGuildId) return;
   try {
-    await fetch(`/api/music/player/${state.selectedGuildId}/queue`, { method: 'DELETE' });
+    const url = `/api/music/player/${state.selectedGuildId}/queue${state.selectedMusicBotId ? `?accountId=${state.selectedMusicBotId}` : ''}`;
+    await fetch(url, { method: 'DELETE' });
     renderQueue({ queue: [] });
     showToast('Queue cleared', 'info');
   } catch (e) {}
+});
 });
 
 // Update Now Playing UI
@@ -1326,7 +1349,8 @@ function renderQueue(player) {
 async function removeQueueItem(index) {
   if (!state.selectedGuildId) return;
   try {
-    await fetch(`/api/music/player/${state.selectedGuildId}/queue/${index}`, { method: 'DELETE' });
+    const url = `/api/music/player/${state.selectedGuildId}/queue/${index}${state.selectedMusicBotId ? `?accountId=${state.selectedMusicBotId}` : ''}`;
+    await fetch(url, { method: 'DELETE' });
     showToast('Removed from queue', 'info');
   } catch (e) {}
 }
