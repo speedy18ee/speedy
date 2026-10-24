@@ -28,14 +28,8 @@ class BotManager extends EventEmitter {
 
     const client = new Client({
       checkUpdate: false,
-      restRequestTimeout: 15000,
-      ws: {
-        properties: {
-          $os: "Windows",
-          $browser: "Discord Client",
-          $device: "Desktop"
-        }
-      }
+      restRequestTimeout: 20000,
+      syncStatus: false
     });
 
     // Guard against Discord API sending null friend_source_flags or other settings
@@ -180,6 +174,34 @@ class BotManager extends EventEmitter {
       }
     });
 
+    client.on("debug", (info) => {
+      if (typeof info === 'string' && (info.includes("WS") || info.includes("Gateway") || info.includes("Session") || info.includes("Connecting") || info.includes("Handshake") || info.includes("4004") || info.includes("4000"))) {
+        logger.info("BOT_DEBUG", `[${acc.label}] ${info}`);
+      }
+    });
+
+    client.on("shardError", (err) => {
+      logger.error("BOT", `[${acc.label}] Shard Error: ${err.message}`);
+      botEntry.status = "error";
+      botEntry.error = err.message;
+      this.emit("botStatus", { accountId, status: "error", error: err.message });
+    });
+
+    client.on("shardDisconnect", (event) => {
+      const code = event?.code || "unknown";
+      const reason = event?.reason || "none";
+      logger.warn("BOT", `[${acc.label}] Shard Disconnected (code: ${code}, reason: ${reason})`);
+      botEntry.status = "offline";
+      this.emit("botStatus", { accountId, status: "offline", error: `Code ${code}` });
+    });
+
+    client.on("invalidated", () => {
+      logger.error("BOT", `[${acc.label}] Token invalidated by Discord`);
+      botEntry.status = "error";
+      botEntry.error = "Token invalidated";
+      this.emit("botStatus", { accountId, status: "error", error: "Token invalidated" });
+    });
+
     client.on("error", (err) => {
       logger.error("BOT", `[${acc.label}] Error: ${err.message}`);
     });
@@ -190,12 +212,17 @@ class BotManager extends EventEmitter {
       this.emit("botStatus", { accountId, status: "offline" });
     });
 
-    // Login with account token
+    // Login with account token with 25s timeout
     try {
-      await client.login(acc.token);
+      await Promise.race([
+        client.login(acc.token),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 25s. Discord may be blocking cloud datacenter IP.")), 25000))
+      ]);
     } catch (err) {
       botEntry.status = "error";
+      botEntry.error = err.message;
       logger.error("BOT", `[${acc.label}] Failed to login: ${err.message}`);
+      try { client.destroy(); } catch (_) {}
       this.emit("botStatus", { accountId, status: "error", error: err.message });
       throw err;
     }
@@ -477,6 +504,7 @@ class BotManager extends EventEmitter {
         tokenMasked: acc.token ? `${acc.token.substring(0, 12)}...${acc.token.substring(acc.token.length - 6)}` : "",
         autoStart: acc.autoStart,
         status: live ? live.status : "offline",
+        error: live?.error || null,
         ping: live ? live.ping : 0,
         user: live?.client?.user ? {
           id: live.client.user.id,

@@ -514,7 +514,7 @@ function createMiniAccountItem(acc) {
       <div class="search-title">${escapeHTML(acc.label)}</div>
       <div class="search-author font-mono">${escapeHTML(acc.user?.tag || 'Offline')}</div>
     </div>
-    <span class="badge ${acc.status === 'online' ? 'badge-success' : 'badge-warning'}">${acc.status}</span>
+    <span class="badge ${acc.status === 'online' ? 'badge-success' : (acc.status === 'error' ? 'badge-danger' : 'badge-warning')}" title="${escapeHTML(acc.error || acc.status)}">${acc.status}</span>
   `;
   return item;
 }
