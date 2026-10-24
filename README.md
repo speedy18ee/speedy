@@ -1,5 +1,7 @@
 # 🎵 Discord Selfbot Multi-Account 24/7 & Lavalink Music Dashboard
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/speedy18ee/speedy)
+
 A Discord Selfbot Management Suite and Web Dashboard featuring **Multi-Account Support**, **Lavalink v4 Audio Streaming**, and **24/7 Voice Channel Stay** with auto-reconnection.
 
 ---
