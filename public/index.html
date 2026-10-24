@@ -112,6 +112,9 @@
           <button class="btn btn-outline btn-danger-outline" id="btn-stop-all">
             <i class="fa-solid fa-stop"></i> Stop All
           </button>
+          <button class="btn btn-outline" type="button" onclick="openMassVoiceTab()" title="Mass Voice: Connect all bots to VC" style="border-color: rgba(168, 85, 247, 0.45); color: #c084fc;">
+            <i class="fa-solid fa-users-rays"></i> All to VC
+          </button>
           <button class="btn btn-primary" id="btn-open-add-bot">
             <i class="fa-solid fa-plus"></i> Add Account
           </button>
@@ -215,11 +218,79 @@
 
       <!-- TAB 3: 24/7 VOICE STAY -->
       <section id="tab-voice" class="tab-pane">
+        <!-- Mass 24/7 Voice Control Card -->
+        <div class="card" id="mass-voice-card" style="margin-bottom: 22px; border: 1px solid rgba(168, 85, 247, 0.4); background: linear-gradient(180deg, rgba(22, 14, 38, 0.75) 0%, rgba(10, 10, 16, 0.85) 100%); box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 25px rgba(168, 85, 247, 0.15); border-radius: 20px;">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid rgba(255,255,255,0.07); padding: 16px 20px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="width:38px; height:38px; border-radius:12px; background:rgba(168, 85, 247, 0.2); display:flex; align-items:center; justify-content:center; border: 1px solid rgba(168, 85, 247, 0.4);">
+                <i class="fa-solid fa-users-rays" style="color: #c084fc; font-size:1.15rem;"></i>
+              </div>
+              <div>
+                <h3 style="margin:0; font-size:1.05rem; font-weight:800; color:#ffffff;">Mass Voice & 24/7 Stay</h3>
+                <span style="font-size:0.75rem; color:#94a3b8;">Connect ALL your bots to the same Voice Channel at once</span>
+              </div>
+            </div>
+            <span class="badge badge-primary" style="padding: 6px 12px; font-weight:700;"><i class="fa-solid fa-bolt"></i> All Bots</span>
+          </div>
+          <div class="card-body" style="padding: 18px 20px;">
+            <div style="display:grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 16px;">
+              <div>
+                <label style="font-size:0.82rem; font-weight:700; color:#e2e8f0; display:block; margin-bottom:6px;">
+                  <i class="fa-solid fa-hashtag" style="color:#c084fc;"></i> Voice Channel ID:
+                </label>
+                <div style="display:flex; gap:8px;">
+                  <input type="text" id="mass-vc-id" class="input-text" placeholder="Paste Voice Channel ID (e.g. 1546123281734696980)..." style="flex:1;">
+                  <button class="btn btn-outline" type="button" onclick="loadMassChannelSelector()" title="Pick from server list">
+                    <i class="fa-solid fa-list"></i> Select
+                  </button>
+                </div>
+              </div>
+
+              <!-- Channel Selector Dropdown (optional) -->
+              <div id="mass-channel-dropdown-box" style="display:none; background: rgba(0,0,0,0.45); border-radius:12px; padding:12px; border:1px solid rgba(255,255,255,0.08);">
+                <label style="font-size:0.75rem; color:#94a3b8; display:block; margin-bottom:6px;">Or Pick from Discord Server List:</label>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                  <select id="mass-guild-select" class="input-select" onchange="onMassGuildChange()">
+                    <option value="">-- Choose Server --</option>
+                  </select>
+                  <select id="mass-channel-select" class="input-select" onchange="onMassChannelChange()">
+                    <option value="">-- Choose Channel --</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding: 4px 0;">
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.84rem; cursor:pointer; color:#e2e8f0;">
+                  <input type="checkbox" id="mass-247-enabled" checked style="accent-color:#a855f7; width:17px; height:17px;">
+                  <span><b>Keep 24/7 Connected</b> (Auto-reconnect indefinitely)</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.84rem; cursor:pointer; color:#94a3b8;">
+                  <input type="checkbox" id="mass-self-mute" style="accent-color:#a855f7; width:15px; height:15px;">
+                  <span>Self-Mute</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:8px; font-size:0.84rem; cursor:pointer; color:#94a3b8;">
+                  <input type="checkbox" id="mass-self-deaf" style="accent-color:#a855f7; width:15px; height:15px;">
+                  <span>Self-Deafen</span>
+                </label>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button class="btn btn-primary" id="btn-mass-join" onclick="executeMassJoinVoice()" style="flex:1; min-width:200px; padding:12px 18px; font-weight:800; font-size:0.92rem; box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);">
+                <i class="fa-solid fa-tower-broadcast"></i> Join All Bots to VC (24/7)
+              </button>
+              <button class="btn btn-outline btn-danger-outline" id="btn-mass-leave" onclick="executeMassLeaveVoice()" style="padding:12px 18px; font-weight:700;">
+                <i class="fa-solid fa-phone-slash"></i> Leave All
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="info-banner">
           <i class="fa-solid fa-circle-info"></i>
           <div>
-            <h4>24/7 Voice Stay Mode</h4>
-            <p>Select any selfbot account and connect it to a voice channel. When <b>24/7 Stay</b> is active, the bot stays connected indefinitely, auto-rejoins if disconnected or moved, and resumes upon application restarts.</p>
+            <h4>Per-Bot 24/7 Voice Stay</h4>
+            <p>You can also configure individual bots below. When <b>24/7 Stay</b> is active, bots automatically reconnect if kicked, moved, or disconnected.</p>
           </div>
         </div>
 
@@ -719,7 +790,7 @@
   <div class="toast-container" id="toast-container"></div>
 
   <script src="js/hwid.js"></script>
-  <script src="js/app.js?v=3.0"></script>
+  <script src="js/app.js?v=3.6"></script>
   <script src="js/customAudio.js?v=3.5"></script>
 </body>
 </html>

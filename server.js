@@ -293,6 +293,36 @@ app.post('/api/accounts/stop-all', async (req, res) => {
   res.json({ success: true });
 });
 
+// Mass Voice: Join ALL accounts to a Voice Channel & Enable 24/7
+app.post('/api/accounts/voice/join-all', async (req, res) => {
+  try {
+    const { channelId, guildId, keep247, selfMute, selfDeaf } = req.body;
+    if (!channelId || !channelId.trim()) {
+      return res.status(400).json({ success: false, error: 'Voice Channel ID is required' });
+    }
+    const result = await botManager.joinAllToVoice(req.user.userId, channelId.trim(), {
+      guildId,
+      keep247: keep247 !== false,
+      selfMute: !!selfMute,
+      selfDeaf: !!selfDeaf
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Mass Voice: Leave ALL accounts from Voice
+app.post('/api/accounts/voice/leave-all', async (req, res) => {
+  try {
+    const { disable247 = true } = req.body;
+    const result = await botManager.leaveAllVoice(req.user.userId, disable247);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/accounts/:id/presence', (req, res) => {
   try {
     const acc = database.getAccount(req.params.id, req.user.userId);

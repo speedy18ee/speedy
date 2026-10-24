@@ -1679,6 +1679,170 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
+// =========================================================
+// MASS 24/7 VOICE CONTROLS (All Bots at Once)
+// =========================================================
+let massGuildsCache = [];
+
+function openMassVoiceTab() {
+  switchTab('voice');
+  setTimeout(() => {
+    const card = document.getElementById('mass-voice-card');
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.style.transition = 'box-shadow 0.4s ease, border-color 0.4s ease';
+      card.style.borderColor = '#c084fc';
+      card.style.boxShadow = '0 0 35px rgba(168, 85, 247, 0.5)';
+      setTimeout(() => {
+        card.style.borderColor = 'rgba(168, 85, 247, 0.4)';
+        card.style.boxShadow = '0 10px 30px rgba(0,0,0,0.6), 0 0 25px rgba(168, 85, 247, 0.15)';
+      }, 1500);
+    }
+  }, 100);
+}
+
+async function loadMassChannelSelector() {
+  const box = document.getElementById('mass-channel-dropdown-box');
+  const guildSelect = document.getElementById('mass-guild-select');
+  if (box.style.display !== 'none') {
+    box.style.display = 'none';
+    return;
+  }
+
+  // Find any online bot to fetch server list
+  const onlineBot = state.accounts.find(a => a.status === 'online');
+  if (!onlineBot) {
+    showToast('Start at least 1 bot first to load your Discord servers list, or paste Channel ID directly!', 'warn');
+    return;
+  }
+
+  box.style.display = 'block';
+  guildSelect.innerHTML = '<option value="">Loading servers...</option>';
+
+  try {
+    const res = await fetch(`/api/accounts/${onlineBot.id}/guilds`);
+    const data = await res.json();
+    if (!data.success || !data.guilds) {
+      throw new Error(data.error || 'Failed to fetch servers');
+    }
+
+    massGuildsCache = data.guilds;
+    guildSelect.innerHTML = '<option value="">-- Choose Server --</option>';
+    massGuildsCache.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = `${g.name} (${g.voiceChannels ? g.voiceChannels.length : 0} VCs)`;
+      guildSelect.appendChild(opt);
+    });
+  } catch (err) {
+    showToast(`Error loading servers: ${err.message}`, 'error');
+    box.style.display = 'none';
+  }
+}
+
+function onMassGuildChange() {
+  const guildId = document.getElementById('mass-guild-select').value;
+  const channelSelect = document.getElementById('mass-channel-select');
+  channelSelect.innerHTML = '<option value="">-- Choose Channel --</option>';
+
+  if (!guildId) return;
+
+  const guild = massGuildsCache.find(g => g.id === guildId);
+  if (!guild || !guild.voiceChannels || guild.voiceChannels.length === 0) {
+    channelSelect.innerHTML = '<option value="">No voice channels found</option>';
+    return;
+  }
+
+  guild.voiceChannels.forEach(ch => {
+    const opt = document.createElement('option');
+    opt.value = ch.id;
+    opt.textContent = `🔊 ${ch.name}`;
+    channelSelect.appendChild(opt);
+  });
+}
+
+function onMassChannelChange() {
+  const chId = document.getElementById('mass-channel-select').value;
+  if (chId) {
+    document.getElementById('mass-vc-id').value = chId;
+  }
+}
+
+async function executeMassJoinVoice() {
+  const channelId = document.getElementById('mass-vc-id').value.trim();
+  const keep247 = document.getElementById('mass-247-enabled').checked;
+  const selfMute = document.getElementById('mass-self-mute').checked;
+  const selfDeaf = document.getElementById('mass-self-deaf').checked;
+  const btn = document.getElementById('btn-mass-join');
+
+  if (!channelId) {
+    showToast('Please enter or select a Voice Channel ID first!', 'warn');
+    document.getElementById('mass-vc-id').focus();
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting All Bots...';
+
+  try {
+    const res = await fetch('/api/accounts/voice/join-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channelId,
+        guildId: document.getElementById('mass-guild-select')?.value || null,
+        keep247,
+        selfMute,
+        selfDeaf
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to join bots');
+    }
+
+    showToast(`🎉 Success! ${data.joined}/${data.total} bots joined "${data.channelName}" (24/7: ${keep247 ? 'ACTIVE' : 'OFF'})!`, 'success');
+    loadAccounts();
+    renderVoiceManagerCards();
+  } catch (err) {
+    showToast(`Mass join failed: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i> Join All Bots to VC (24/7)';
+  }
+}
+
+async function executeMassLeaveVoice() {
+  const btn = document.getElementById('btn-mass-leave');
+  if (!confirm('Are you sure you want to disconnect all your bots from voice?')) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Leaving...';
+
+  try {
+    const res = await fetch('/api/accounts/voice/leave-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disable247: true })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to leave voice');
+    }
+
+    showToast(`✅ Disconnected all bots from voice.`, 'info');
+    loadAccounts();
+    renderVoiceManagerCards();
+  } catch (err) {
+    showToast(`Mass leave failed: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-phone-slash"></i> Leave All';
+  }
+}
+
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
   checkUserAuth();

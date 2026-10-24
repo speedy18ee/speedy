@@ -435,6 +435,113 @@ class BotManager extends EventEmitter {
     return voice247Config;
   }
 
+  // --- Mass Voice: Join ALL Accounts to a Voice Channel & Enable 24/7 ---
+  async joinAllToVoice(userId = null, channelId, { guildId = null, keep247 = true, selfMute = false, selfDeaf = false } = {}) {
+    if (!channelId) throw new Error("Voice Channel ID is required");
+
+    const accounts = database.getAccounts(userId);
+    if (!accounts || accounts.length === 0) throw new Error("No Discord accounts found in your dashboard.");
+
+    let detectedGuildId = guildId;
+    let channelName = "";
+    let guildName = "";
+
+    // Resolve channel & guild info from any online bot
+    for (const [id, botEntry] of this.bots) {
+      if (botEntry.client && botEntry.status === "online") {
+        try {
+          const ch = await botEntry.client.channels.fetch(channelId);
+          if (ch) {
+            channelName = ch.name;
+            guildName = ch.guild.name;
+            detectedGuildId = ch.guild.id;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
+    let joinedCount = 0;
+    const errors = [];
+
+    for (const acc of accounts) {
+      // 1. Update 24/7 setting in database
+      const voice247Config = {
+        enabled: !!keep247,
+        guildId: detectedGuildId || "",
+        guildName: guildName || "",
+        channelId: channelId,
+        channelName: channelName || "",
+        selfMute: !!selfMute,
+        selfDeaf: !!selfDeaf
+      };
+      database.updateAccount(acc.id, { voice247: voice247Config });
+
+      // 2. If bot is online, join the channel
+      const botEntry = this.bots.get(acc.id);
+      if (botEntry && botEntry.status === "online") {
+        try {
+          await this.joinVoice(acc.id, channelId, {
+            guildId: detectedGuildId,
+            selfMute,
+            selfDeaf
+          });
+          joinedCount++;
+        } catch (err) {
+          errors.push(`${acc.label}: ${err.message}`);
+        }
+      }
+    }
+
+    logger.voice("24/7", `Mass voice join executed: ${joinedCount}/${accounts.length} bots joined ${channelName || channelId} (24/7: ${keep247 ? 'ACTIVE' : 'OFF'})`);
+    this.emit("accountsUpdated", { accounts: this.getAllBotsStatus(userId) });
+
+    return {
+      success: true,
+      total: accounts.length,
+      joined: joinedCount,
+      channelName: channelName || channelId,
+      guildName,
+      keep247,
+      errors
+    };
+  }
+
+  // --- Mass Voice: Disconnect ALL Accounts from Voice ---
+  async leaveAllVoice(userId = null, disable247 = true) {
+    const accounts = database.getAccounts(userId);
+    let leftCount = 0;
+
+    for (const acc of accounts) {
+      if (disable247) {
+        database.updateAccount(acc.id, {
+          voice247: {
+            enabled: false,
+            guildId: "",
+            guildName: "",
+            channelId: "",
+            channelName: "",
+            selfMute: false,
+            selfDeaf: false
+          }
+        });
+      }
+
+      const botEntry = this.bots.get(acc.id);
+      if (botEntry) {
+        try {
+          await this.leaveVoice(acc.id);
+          leftCount++;
+        } catch (e) {}
+      }
+    }
+
+    logger.voice("24/7", `Mass voice disconnect: ${leftCount} bots left voice.`);
+    this.emit("accountsUpdated", { accounts: this.getAllBotsStatus(userId) });
+
+    return { success: true, leftCount };
+  }
+
   // --- Apply Presence ---
   applyPresence(client, acc) {
     if (!client.user) return;
