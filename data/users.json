@@ -1,0 +1,19 @@
+[
+  {
+    "id": "usr_mvl4332v55095c",
+    "username": "exc_user",
+    "password": "exc123",
+    "hwid": "HWID-2EB757AB171C81CEC48072C8D035EE4A",
+    "status": "active",
+    "note": "Default Initial User",
+    "boundDevice": {
+      "platform": "PC / Desktop (Win32)",
+      "browser": "Chrome",
+      "screen": "1920x1080",
+      "boundAt": "2026-10-24T04:01:28.477Z"
+    },
+    "createdAt": "2026-10-23T15:15:14.647Z",
+    "lastLogin": "2026-10-24T08:24:06.585Z",
+    "botLimit": 11
+  }
+]

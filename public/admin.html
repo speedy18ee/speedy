@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EXC - HWID Credential Manager</title>
+  <link rel="icon" type="image/jpeg" href="assets/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Admin specific layout styles */
+    .admin-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 30px 20px;
+    }
+    .admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .admin-brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .admin-logo {
+      width: 58px;
+      height: 58px;
+      border-radius: 14px;
+      object-fit: cover;
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.45);
+      border: 2px solid rgba(168, 85, 247, 0.5);
+    }
+    .admin-brand-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #fff;
+    }
+    .admin-brand-title span {
+      color: #a855f7;
+    }
+    .admin-subtitle {
+      font-size: 0.86rem;
+      color: var(--text-muted);
+    }
+    .hwid-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+    .hwid-bound {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .hwid-unbound {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .credentials-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .credentials-table th, .credentials-table td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .credentials-table th {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+    }
+    .btn-icon-action {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-normal);
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .btn-icon-action:hover {
+      background: rgba(168, 85, 247, 0.2);
+      border-color: #a855f7;
+      color: #fff;
+    }
+    .btn-reset-hwid {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #fbbf24;
+    }
+    .btn-reset-hwid:hover {
+      background: rgba(245, 158, 11, 0.3);
+      color: #fff;
+    }
+    .btn-delete-user {
+      background: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+    .btn-delete-user:hover {
+      background: rgba(239, 68, 68, 0.3);
+      color: #fff;
+    }
+    .admin-stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .admin-stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .admin-stat-val {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #fff;
+    }
+    .admin-stat-lbl {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .quick-copy-box {
+      margin-top: 14px;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px dashed var(--accent-purple);
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      display: none;
+      word-break: break-all;
+    }
+    @media (max-width: 768px) {
+      .credentials-table {
+        display: block;
+        overflow-x: auto;
+      }
+      .admin-container {
+        padding: 15px 10px;
+      }
+    }
+  </style>
+</head>
+<body class="dark-theme">
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- ADMIN AUTH SCREEN (SHOWN IF NOT LOGGED IN AS ADMIN) -->
+  <div id="admin-auth-overlay" style="position: fixed; inset: 0; z-index: 9999; background: rgba(10, 11, 16, 0.95); backdrop-filter: blur(20px); display: flex; align-items: center; justify-content: center; padding: 20px;">
+    <div class="glass-panel" style="width: 100%; max-width: 420px; padding: 32px; text-align: center; border: 1px solid rgba(168, 85, 247, 0.4); box-shadow: 0 0 50px rgba(168, 85, 247, 0.2);">
+      <img src="assets/logo.jpg" alt="EXC Logo" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; margin-bottom: 16px; border: 2px solid #a855f7; box-shadow: 0 0 30px rgba(168, 85, 247, 0.5);">
+      <h2 style="font-size: 1.6rem; font-weight: 800; color: #fff; margin-bottom: 6px;">EXC <span>ADMIN</span></h2>
+      <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 24px;">Credential Creation & HWID Lock Portal</p>
+
+      <form id="form-admin-login" onsubmit="handleAdminLogin(event)">
+        <div class="form-group" style="text-align: left; margin-bottom: 18px;">
+          <label style="font-size: 0.84rem; color: var(--text-muted);">Admin Secret Key</label>
+          <div class="token-input-wrapper">
+            <input type="password" id="input-admin-key" class="form-input" placeholder="Enter admin password..." required autofocus>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="padding: 12px; font-weight: 700;">
+          <i class="fa-solid fa-lock-open"></i> Access Management Portal
+        </button>
+      </form>
+      <div id="admin-login-error" style="display: none; margin-top: 14px; padding: 10px; border-radius: 8px; background: rgba(239, 68, 68, 0.2); color: #f87171; font-size: 0.84rem; border: 1px solid rgba(239, 68, 68, 0.4);"></div>
+    </div>
+  </div>
+
+  <!-- ADMIN MANAGEMENT DASHBOARD -->
+  <div class="admin-container" id="admin-main-panel" style="display: none;">
+    <header class="admin-header">
+      <div class="admin-brand">
+        <img src="assets/logo.jpg" alt="EXC" class="admin-logo">
+        <div>
+          <div class="admin-brand-title">EXC <span>CREDENTIALS</span></div>
+          <div class="admin-subtitle">User Credentials, Bot Quotas & 1-Device HWID Lock</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <a href="/login" class="btn btn-outline" style="text-decoration: none;">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> Login Page
+        </a>
+        <a href="/dashboard" class="btn btn-primary" style="text-decoration: none;">
+          <i class="fa-solid fa-desktop"></i> Open User Dashboard
+        </a>
+        <button class="btn btn-outline btn-danger-outline" onclick="adminLogout()">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats Row -->
+    <div class="admin-stats-row">
+      <div class="admin-stat-card">
+        <div class="stat-icon purple"><i class="fa-solid fa-users"></i></div>
+        <div>
+          <div class="admin-stat-val" id="stat-total-users">0</div>
+          <div class="admin-stat-lbl">Total Credentials</div>
+        </div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="stat-icon green"><i class="fa-solid fa-lock"></i></div>
+        <div>
+          <div class="admin-stat-val" id="stat-bound-users">0</div>
+          <div class="admin-stat-lbl">HWID Locked Devices</div>
+        </div>
+      </div>
+      <div class="admin-stat-card">
+        <div class="stat-icon cyan"><i class="fa-solid fa-key"></i></div>
+        <div>
+          <div class="admin-stat-val" id="stat-unbound-users">0</div>
+          <div class="admin-stat-lbl">Unbound (Ready)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create User Card -->
+    <div class="glass-panel" style="margin-bottom: 28px; padding: 24px;">
+      <div class="panel-header" style="margin-bottom: 18px;">
+        <h2><i class="fa-solid fa-user-plus"></i> Create New 1-Device Login Credential</h2>
+        <button class="btn btn-sm btn-outline" onclick="generateRandomCreds()">
+          <i class="fa-solid fa-shuffle"></i> Auto-Generate Credential
+        </button>
+      </div>
+
+      <form id="form-create-user" onsubmit="handleCreateUser(event)" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: flex-end;">
+        <div class="form-group">
+          <label style="font-size: 0.84rem; color: var(--text-muted);"><i class="fa-solid fa-user"></i> Username</label>
+          <input type="text" id="create-username" class="form-input" placeholder="e.g. exc_buyer1" required>
+        </div>
+
+        <div class="form-group">
+          <label style="font-size: 0.84rem; color: var(--text-muted);"><i class="fa-solid fa-key"></i> Password</label>
+          <input type="text" id="create-password" class="form-input font-mono" placeholder="e.g. pass9821" required>
+        </div>
+
+        <div class="form-group">
+          <label style="font-size: 0.84rem; color: var(--text-muted);"><i class="fa-solid fa-robot"></i> Bot Limit (Max Accounts)</label>
+          <input type="number" id="create-bot-limit" class="form-input" min="1" max="100" value="10" placeholder="10" required>
+        </div>
+
+        <div class="form-group">
+          <label style="font-size: 0.84rem; color: var(--text-muted);"><i class="fa-solid fa-tag"></i> Note / Customer (Optional)</label>
+          <input type="text" id="create-note" class="form-input" placeholder="e.g. Buyer on Discord">
+        </div>
+
+        <div>
+          <button type="submit" class="btn btn-primary btn-block" style="padding: 10px; font-weight: 600;">
+            <i class="fa-solid fa-shield-halved"></i> Create & Lock
+          </button>
+        </div>
+      </form>
+
+      <div id="quick-copy-box" class="quick-copy-box">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="color: #a855f7; font-weight: bold;">✅ Credential Created! Ready to send:</span>
+          <button class="btn btn-sm btn-outline" onclick="copyCreatedText()"><i class="fa-solid fa-copy"></i> Copy Message</button>
+        </div>
+        <pre id="quick-copy-content" style="margin: 0; white-space: pre-wrap; color: #fff;"></pre>
+      </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="glass-panel" style="padding: 24px;">
+      <div class="panel-header" style="margin-bottom: 14px;">
+        <h2><i class="fa-solid fa-id-card-clip"></i> Active Credentials & HWID Status</h2>
+        <button class="btn btn-sm btn-outline" onclick="loadUsersTable()">
+          <i class="fa-solid fa-rotate"></i> Refresh
+        </button>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="credentials-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Password</th>
+              <th>Bot Limit</th>
+              <th>HWID Lock Status</th>
+              <th>Bound Device Info</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="js/admin.js"></script>
+</body>
+</html>
