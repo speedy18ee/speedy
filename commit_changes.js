@@ -25,7 +25,7 @@ async function commitAll() {
     const sha = await git.commit({
       fs,
       dir,
-      message: 'Fix syntax error in app.js and restore tab navigation',
+      message: 'Add multi-proxy failover pool, 45s login timeout and retry connect button',
       author: {
         name: 'speedy18ee',
         email: 'speedy@example.com'

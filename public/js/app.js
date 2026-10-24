@@ -475,6 +475,7 @@ function createAccountCard(acc) {
       <div class="acc-meta">
         <h3 class="acc-label-title">${escapeHTML(acc.label)}</h3>
         <span class="acc-tag-sub font-mono">${escapeHTML(tag)}</span>
+        ${acc.error ? `<div style="font-size:0.75rem; color:#ef4444; margin-top:3px;"><i class="fa-solid fa-circle-exclamation"></i> ${escapeHTML(acc.error)}</div>` : ''}
       </div>
       <span class="badge ${isOnline ? 'badge-success' : (acc.status === 'error' ? 'badge-danger' : 'badge-warning')}">
         ${acc.status}
@@ -497,7 +498,7 @@ function createAccountCard(acc) {
             <i class="fa-solid fa-power-off"></i> Stop
            </button>`
         : `<button class="btn btn-sm btn-primary" onclick="startAccount('${acc.id}')">
-            <i class="fa-solid fa-play"></i> Start
+            <i class="fa-solid ${acc.status === 'error' ? 'fa-rotate-right' : 'fa-play'}"></i> ${acc.status === 'error' ? 'Retry Connect' : 'Start'}
            </button>`
       }
       <button class="btn btn-sm btn-outline" onclick="openPresenceModal('${acc.id}')" title="Change Presence">
@@ -519,14 +520,18 @@ function createMiniAccountItem(acc) {
   item.className = 'search-item';
   item.style.marginBottom = '6px';
   const avatarUrl = acc.user?.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+  const isOnline = acc.status === 'online';
+  const isError = acc.status === 'error';
 
   item.innerHTML = `
     <img class="search-thumb" src="${avatarUrl}" alt="Avatar" style="border-radius:50%;">
     <div class="search-info">
       <div class="search-title">${escapeHTML(acc.label)}</div>
-      <div class="search-author font-mono">${escapeHTML(acc.user?.tag || 'Offline')}</div>
+      <div class="search-author font-mono">${escapeHTML(acc.user?.tag || (isError ? (acc.error || 'Connection Failed') : 'Offline'))}</div>
     </div>
-    <span class="badge ${acc.status === 'online' ? 'badge-success' : (acc.status === 'error' ? 'badge-danger' : 'badge-warning')}" title="${escapeHTML(acc.error || acc.status)}">${acc.status}</span>
+    <span class="badge ${isOnline ? 'badge-success' : (isError ? 'badge-danger' : 'badge-warning')}" style="${isError ? 'cursor:pointer;' : ''}" ${isError ? `onclick="startAccount('${acc.id}')"` : ''} title="${escapeHTML(acc.error || acc.status)}">
+      ${isError ? '<i class="fa-solid fa-rotate-right"></i> RETRY' : acc.status}
+    </span>
   `;
   return item;
 }

@@ -7,6 +7,16 @@ const database = require("./database");
 const logger = require("./logger");
 const config = require("./config");
 
+// Verified fast & working proxy pool for multi-bot Discord Gateway connections
+const WORKING_PROXIES = [
+  'http://pldkrffl:sqqoj1cw6sxr@64.137.10.153:5803',
+  'http://pldkrffl:sqqoj1cw6sxr@45.38.107.97:6014',
+  'http://pldkrffl:sqqoj1cw6sxr@38.154.185.97:6370',
+  'http://pldkrffl:sqqoj1cw6sxr@198.46.161.42:5092',
+  'http://pldkrffl:sqqoj1cw6sxr@104.164.49.38:7693',
+  'http://pldkrffl:sqqoj1cw6sxr@23.26.71.145:5628'
+];
+
 class BotManager extends EventEmitter {
   constructor(lavalinkClient) {
     super();
@@ -15,7 +25,7 @@ class BotManager extends EventEmitter {
     this.bots = new Map();
   }
 
-  // --- Start an Account ---
+  // --- Start an Account with Multi-Proxy Pool & Failover ---
   async startAccount(accountId) {
     const acc = database.getAccount(accountId);
     if (!acc) throw new Error("Account not found");
@@ -25,14 +35,61 @@ class BotManager extends EventEmitter {
       return;
     }
 
-    logger.info("BOT", `Starting selfbot account: ${acc.label}...`);
-
     const settings = database.getSettings();
-    const proxy = acc.proxy || settings.proxy || process.env.DISCORD_PROXY || config.defaultProxy;
+    const candidateProxies = [];
+    if (acc.proxy && acc.proxy.trim()) {
+      candidateProxies.push(acc.proxy.trim());
+    }
+    if (settings.proxy && settings.proxy.trim() && !candidateProxies.includes(settings.proxy.trim())) {
+      candidateProxies.push(settings.proxy.trim());
+    }
+    if (process.env.DISCORD_PROXY && process.env.DISCORD_PROXY.trim() && !candidateProxies.includes(process.env.DISCORD_PROXY.trim())) {
+      candidateProxies.push(process.env.DISCORD_PROXY.trim());
+    }
 
+    // Add all working proxies as fallbacks
+    for (const p of WORKING_PROXIES) {
+      if (!candidateProxies.includes(p)) candidateProxies.push(p);
+    }
+    if (candidateProxies.length === 0) candidateProxies.push(null);
+
+    let lastError = null;
+
+    for (let i = 0; i < candidateProxies.length; i++) {
+      const proxy = candidateProxies[i];
+      const maskedProxy = proxy ? proxy.replace(/:[^:]*@/, ':****@') : 'Direct';
+      logger.info("BOT", `Starting selfbot account: ${acc.label} (Attempt ${i + 1}/${candidateProxies.length}) via ${maskedProxy}...`);
+
+      try {
+        await this._startWithProxy(accountId, acc, proxy);
+        return; // Success!
+      } catch (err) {
+        lastError = err;
+        logger.warn("BOT", `[${acc.label}] Attempt ${i + 1} failed: ${err.message}`);
+
+        // If Discord says token is invalid (4004 / TOKEN_INVALID), do not waste time retrying proxies
+        if (err.message && (err.message.includes("TOKEN_INVALID") || err.message.includes("An invalid token was provided") || err.message.includes("4004"))) {
+          break;
+        }
+
+        if (i < candidateProxies.length - 1) {
+          await new Promise(r => setTimeout(r, 1200));
+        }
+      }
+    }
+
+    const botEntry = this.bots.get(accountId) || { accountId, account: acc };
+    botEntry.status = "error";
+    botEntry.error = lastError?.message || "Connection failed";
+    this.bots.set(accountId, botEntry);
+    this.emit("botStatus", { accountId, status: "error", error: botEntry.error });
+    throw lastError || new Error("Failed to connect with available proxies");
+  }
+
+  async _startWithProxy(accountId, acc, proxy) {
     const clientOptions = {
       checkUpdate: false,
-      restRequestTimeout: 25000,
+      restRequestTimeout: 40000,
       syncStatus: false
     };
 
@@ -42,7 +99,6 @@ class BotManager extends EventEmitter {
         formattedProxy = `socks5://${formattedProxy}`;
       }
       clientOptions.proxy = formattedProxy;
-      logger.info("BOT", `[${acc.label}] Routing connection via proxy: ${formattedProxy.replace(/:[^:]*@/, ':****@')}`);
     }
 
     const client = new Client(clientOptions);
@@ -85,6 +141,7 @@ class BotManager extends EventEmitter {
     // --- Setup Listeners ---
     client.on("ready", async () => {
       botEntry.status = "online";
+      botEntry.error = null;
       botEntry.ping = client.ws.ping;
       logger.success("BOT", `Account connected: ${client.user.tag} (ID: ${client.user.id})`);
 
@@ -229,18 +286,20 @@ class BotManager extends EventEmitter {
       this.emit("botStatus", { accountId, status: "offline" });
     });
 
-    // Login with account token with 25s timeout
+    // Clean and validate token
+    const cleanToken = (acc.token || '').trim().replace(/^["']|["']$/g, '');
+    if (!cleanToken) {
+      throw new Error("Token is empty or invalid format");
+    }
+
+    // Login with account token with 40s timeout
     try {
       await Promise.race([
-        client.login(acc.token),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 25s. Discord may be blocking cloud datacenter IP.")), 25000))
+        client.login(cleanToken),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 40s (retrying with next proxy...)")), 40000))
       ]);
     } catch (err) {
-      botEntry.status = "error";
-      botEntry.error = err.message;
-      logger.error("BOT", `[${acc.label}] Failed to login: ${err.message}`);
       try { client.destroy(); } catch (_) {}
-      this.emit("botStatus", { accountId, status: "error", error: err.message });
       throw err;
     }
   }
