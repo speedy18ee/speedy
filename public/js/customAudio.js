@@ -497,7 +497,7 @@ class CustomAudioStudio {
     }
 
     try {
-      const token = localStorage.getItem('token') || '';
+      const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
       const res = await fetch('/api/music/custom-audio', {
         method: 'POST',
         headers: {
