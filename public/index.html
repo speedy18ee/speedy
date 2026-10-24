@@ -324,9 +324,14 @@
             </select>
           </div>
 
-          <button class="btn btn-primary" id="btn-connect-music-voice">
-            <i class="fa-solid fa-plug"></i> Join Voice
-          </button>
+          <div style="display: flex; gap: 8px; align-items: flex-end;">
+            <button class="btn btn-primary" id="btn-connect-music-voice" title="Connect selected bot to this voice channel">
+              <i class="fa-solid fa-plug"></i> Join Voice
+            </button>
+            <button class="btn btn-secondary" id="btn-connect-all-music-voice" style="background: linear-gradient(135deg, rgba(168,85,247,0.35), rgba(99,102,241,0.35)); border: 1px solid rgba(168,85,247,0.6); font-weight: 600;" title="Connect all your online bots to this voice channel">
+              <i class="fa-solid fa-users"></i> All Bots to VC
+            </button>
+          </div>
         </div>
 
         <div class="music-deck-grid">
@@ -790,7 +795,7 @@
   <div class="toast-container" id="toast-container"></div>
 
   <script src="js/hwid.js"></script>
-  <script src="js/app.js?v=3.7"></script>
-  <script src="js/customAudio.js?v=3.5"></script>
+  <script src="js/app.js?v=3.8"></script>
+  <script src="js/customAudio.js?v=3.8"></script>
 </body>
 </html>

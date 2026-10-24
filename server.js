@@ -551,6 +551,63 @@ app.post('/api/music/custom-audio', async (req, res) => {
 
     const userId = targetBot?.client?.user?.id || null;
     const ownerId = req.user.userId;
+
+    if (accountId === 'ALL_BOTS') {
+      const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+      if (userBots.length === 0) {
+        return res.status(400).json({ success: false, error: 'No online bots found under your credentials' });
+      }
+
+      logger.music('MASS_PLAY', `User [${req.user.username}] triggering ALL BOTS (${userBots.length}) audio playback: "${displayTitle}"`);
+
+      // Ensure all online bots join target voice channel
+      for (const ub of userBots) {
+        const b = botManager.bots.get(ub.id);
+        if (b && targetChannelId && b.currentVoice?.channelId !== targetChannelId) {
+          try {
+            await botManager.joinVoice(ub.id, targetChannelId);
+          } catch (e) {}
+        }
+      }
+
+      const massPromises = userBots.map(async (ub) => {
+        const b = botManager.bots.get(ub.id);
+        const bUid = b?.client?.user?.id || null;
+        const p = lavalink.createPlayer(targetGuildId, {
+          accountId: ub.id,
+          channelId: targetChannelId,
+          userId: bUid,
+          ownerId
+        });
+
+        if (mode === 'queue') {
+          p.queue.push(track);
+          lavalink.emit('queueUpdate', p);
+          broadcast('playerUpdate', { guildId: targetGuildId, player: p, accountId: ub.id, ownerId }, ownerId);
+        } else {
+          await lavalink.play(targetGuildId, track, {
+            noReplace: true,
+            accountId: ub.id,
+            channelId: targetChannelId,
+            userId: bUid,
+            ownerId
+          });
+          const updated = lavalink.getPlayer(targetGuildId, ub.id, ownerId) || p;
+          broadcast('playerUpdate', { guildId: targetGuildId, player: updated, accountId: ub.id, ownerId }, ownerId);
+        }
+      });
+
+      await Promise.allSettled(massPromises);
+      return res.json({
+        success: true,
+        status: mode === 'queue' ? 'queued' : 'playing',
+        track,
+        url: finalAudioUrl,
+        massPlay: true,
+        botCount: userBots.length
+      });
+    }
+
     const player = lavalink.createPlayer(targetGuildId, {
       accountId: targetBot?.account?.id,
       channelId: targetChannelId,
@@ -587,7 +644,19 @@ app.post('/api/music/custom-audio', async (req, res) => {
 app.get('/api/music/player/:guildId', (req, res) => {
   const accountId = req.query.accountId || null;
   const ownerId = req.user.userId;
-  const player = lavalink.getPlayer(req.params.guildId, accountId, ownerId);
+
+  let player = null;
+  if (accountId && accountId !== 'ALL_BOTS') {
+    player = lavalink.getPlayer(req.params.guildId, accountId, ownerId);
+  } else {
+    for (const p of lavalink.players.values()) {
+      if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+        player = p;
+        if (p.playing) break;
+      }
+    }
+  }
+
   if (player && player.ownerId && player.ownerId !== ownerId) {
     return res.json({ success: true, player: null });
   }
@@ -598,9 +667,35 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
   try {
     const { track, accountId, channelId } = req.body;
     if (!track) return res.status(400).json({ success: false, error: 'Track payload required' });
-    let userId = null;
     const ownerId = req.user.userId;
 
+    if (accountId === 'ALL_BOTS') {
+      const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+      if (userBots.length === 0) {
+        return res.status(400).json({ success: false, error: 'No online bots found to play music' });
+      }
+
+      logger.music('MASS_PLAY', `User [${req.user.username}] mass playing "${track.info?.title}" across ${userBots.length} bots`);
+
+      // Connect all bots to VC if not already in
+      for (const ub of userBots) {
+        const bot = botManager.bots.get(ub.id);
+        if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
+          try { await botManager.joinVoice(ub.id, channelId); } catch (e) {}
+        }
+      }
+
+      const massPromises = userBots.map(async (ub) => {
+        const bot = botManager.bots.get(ub.id);
+        const userId = bot?.client?.user?.id || null;
+        return lavalink.play(req.params.guildId, track, { accountId: ub.id, channelId, userId, ownerId });
+      });
+
+      await Promise.allSettled(massPromises);
+      return res.json({ success: true, massPlay: true, count: userBots.length, result: { status: 'playing', track } });
+    }
+
+    let userId = null;
     if (accountId) {
       const bot = botManager.bots.get(accountId);
       if (bot && bot.account && bot.account.ownerId && bot.account.ownerId !== ownerId) {
@@ -629,9 +724,28 @@ app.post('/api/music/player/:guildId/playlist', async (req, res) => {
     if (!tracks || !Array.isArray(tracks)) {
       return res.status(400).json({ success: false, error: 'Tracks array required' });
     }
-    let userId = null;
     const ownerId = req.user.userId;
 
+    if (accountId === 'ALL_BOTS') {
+      const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+      for (const ub of userBots) {
+        const bot = botManager.bots.get(ub.id);
+        if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
+          try { await botManager.joinVoice(ub.id, channelId); } catch (e) {}
+        }
+      }
+
+      const massPromises = userBots.map(async (ub) => {
+        const bot = botManager.bots.get(ub.id);
+        const userId = bot?.client?.user?.id || null;
+        return lavalink.addPlaylist(req.params.guildId, tracks, { accountId: ub.id, channelId, userId, ownerId });
+      });
+
+      await Promise.allSettled(massPromises);
+      return res.json({ success: true, count: tracks.length, massPlay: true, botCount: userBots.length });
+    }
+
+    let userId = null;
     if (accountId) {
       const bot = botManager.bots.get(accountId);
       if (bot && bot.account && bot.account.ownerId && bot.account.ownerId !== ownerId) {
@@ -657,7 +771,16 @@ app.post('/api/music/player/:guildId/playlist', async (req, res) => {
 app.post('/api/music/player/:guildId/pause', async (req, res) => {
   try {
     const { paused, accountId } = req.body;
-    await lavalink.pause(req.params.guildId, paused !== false, accountId, req.user.userId);
+    const ownerId = req.user.userId;
+    if (accountId === 'ALL_BOTS' || !accountId) {
+      for (const p of lavalink.players.values()) {
+        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+          await lavalink.pause(req.params.guildId, paused !== false, p.accountId, ownerId);
+        }
+      }
+    } else {
+      await lavalink.pause(req.params.guildId, paused !== false, accountId, ownerId);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -667,7 +790,16 @@ app.post('/api/music/player/:guildId/pause', async (req, res) => {
 app.post('/api/music/player/:guildId/skip', async (req, res) => {
   try {
     const { accountId } = req.body;
-    await lavalink.skip(req.params.guildId, accountId, req.user.userId);
+    const ownerId = req.user.userId;
+    if (accountId === 'ALL_BOTS' || !accountId) {
+      for (const p of lavalink.players.values()) {
+        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+          await lavalink.skip(req.params.guildId, p.accountId, ownerId);
+        }
+      }
+    } else {
+      await lavalink.skip(req.params.guildId, accountId, ownerId);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -677,7 +809,16 @@ app.post('/api/music/player/:guildId/skip', async (req, res) => {
 app.post('/api/music/player/:guildId/stop', async (req, res) => {
   try {
     const { accountId } = req.body;
-    await lavalink.stop(req.params.guildId, accountId, req.user.userId);
+    const ownerId = req.user.userId;
+    if (accountId === 'ALL_BOTS' || !accountId) {
+      for (const p of lavalink.players.values()) {
+        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+          await lavalink.stop(req.params.guildId, p.accountId, ownerId);
+        }
+      }
+    } else {
+      await lavalink.stop(req.params.guildId, accountId, ownerId);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -687,7 +828,16 @@ app.post('/api/music/player/:guildId/stop', async (req, res) => {
 app.post('/api/music/player/:guildId/volume', async (req, res) => {
   try {
     const { volume, accountId } = req.body;
-    await lavalink.setVolume(req.params.guildId, parseInt(volume, 10), accountId, req.user.userId);
+    const ownerId = req.user.userId;
+    if (accountId === 'ALL_BOTS' || !accountId) {
+      for (const p of lavalink.players.values()) {
+        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+          await lavalink.setVolume(req.params.guildId, parseInt(volume, 10), p.accountId, ownerId);
+        }
+      }
+    } else {
+      await lavalink.setVolume(req.params.guildId, parseInt(volume, 10), accountId, ownerId);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -697,7 +847,16 @@ app.post('/api/music/player/:guildId/volume', async (req, res) => {
 app.post('/api/music/player/:guildId/seek', async (req, res) => {
   try {
     const { position, accountId } = req.body;
-    await lavalink.seek(req.params.guildId, parseInt(position, 10), accountId, req.user.userId);
+    const ownerId = req.user.userId;
+    if (accountId === 'ALL_BOTS' || !accountId) {
+      for (const p of lavalink.players.values()) {
+        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+          await lavalink.seek(req.params.guildId, parseInt(position, 10), p.accountId, ownerId);
+        }
+      }
+    } else {
+      await lavalink.seek(req.params.guildId, parseInt(position, 10), accountId, ownerId);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -706,14 +865,32 @@ app.post('/api/music/player/:guildId/seek', async (req, res) => {
 
 app.post('/api/music/player/:guildId/loop', (req, res) => {
   const { mode, accountId } = req.body; // 'off', 'track', 'queue'
-  lavalink.setLoop(req.params.guildId, mode, accountId, req.user.userId);
+  const ownerId = req.user.userId;
+  if (accountId === 'ALL_BOTS' || !accountId) {
+    for (const p of lavalink.players.values()) {
+      if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+        lavalink.setLoop(req.params.guildId, mode, p.accountId, ownerId);
+      }
+    }
+  } else {
+    lavalink.setLoop(req.params.guildId, mode, accountId, ownerId);
+  }
   res.json({ success: true });
 });
 
 app.post('/api/music/player/:guildId/filter', async (req, res) => {
   try {
     const { filterName, enabled, accountId } = req.body;
-    await lavalink.applyFilters(req.params.guildId, filterName, !!enabled, accountId, req.user.userId);
+    const ownerId = req.user.userId;
+    if (accountId === 'ALL_BOTS' || !accountId) {
+      for (const p of lavalink.players.values()) {
+        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
+          await lavalink.applyFilters(req.params.guildId, filterName, !!enabled, p.accountId, ownerId);
+        }
+      }
+    } else {
+      await lavalink.applyFilters(req.params.guildId, filterName, !!enabled, accountId, ownerId);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

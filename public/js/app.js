@@ -795,6 +795,14 @@ function populateMusicBotSelect() {
   const onlineBots = state.accounts.filter(a => a.status === 'online');
   botSelect.innerHTML = '<option value="">-- Choose Account --</option>';
 
+  if (onlineBots.length > 0) {
+    const allOpt = document.createElement('option');
+    allOpt.value = 'ALL_BOTS';
+    allOpt.textContent = `⚡ ALL BOTS (${onlineBots.length} Bots Mass Play)`;
+    if (state.selectedMusicBotId === 'ALL_BOTS') allOpt.selected = true;
+    botSelect.appendChild(allOpt);
+  }
+
   onlineBots.forEach(b => {
     const opt = document.createElement('option');
     opt.value = b.id;
@@ -804,8 +812,8 @@ function populateMusicBotSelect() {
   });
 
   if (!state.selectedMusicBotId && onlineBots.length > 0) {
-    state.selectedMusicBotId = onlineBots[0].id;
-    botSelect.value = onlineBots[0].id;
+    state.selectedMusicBotId = onlineBots.length > 1 ? 'ALL_BOTS' : onlineBots[0].id;
+    botSelect.value = state.selectedMusicBotId;
     handleMusicBotChange();
   }
 }
@@ -824,7 +832,14 @@ async function handleMusicBotChange() {
   voiceSelect.innerHTML = '<option value="">-- Choose Voice Channel --</option>';
 
   try {
-    const res = await fetch(`/api/accounts/${state.selectedMusicBotId}/guilds`);
+    let queryBotId = state.selectedMusicBotId;
+    if (queryBotId === 'ALL_BOTS') {
+      const firstOnline = state.accounts.find(a => a.status === 'online');
+      if (firstOnline) queryBotId = firstOnline.id;
+    }
+    if (!queryBotId) return;
+
+    const res = await fetch(`/api/accounts/${queryBotId}/guilds`);
     const data = await res.json();
     if (!data.success) return;
 
@@ -839,7 +854,7 @@ async function handleMusicBotChange() {
     guildSelect._cachedGuilds = data.guilds;
 
     // Check if bot already in a guild
-    const bot = state.accounts.find(a => a.id === state.selectedMusicBotId);
+    const bot = state.accounts.find(a => a.id === queryBotId);
     if (bot?.currentVoice?.guildId) {
       guildSelect.value = bot.currentVoice.guildId;
       state.selectedGuildId = bot.currentVoice.guildId;
@@ -866,7 +881,12 @@ function handleMusicGuildChange() {
   voiceSelect.innerHTML = '<option value="">-- Choose Voice Channel --</option>';
 
   if (guild) {
-    const bot = state.accounts.find(a => a.id === state.selectedMusicBotId);
+    let queryBotId = state.selectedMusicBotId;
+    if (queryBotId === 'ALL_BOTS') {
+      const firstOnline = state.accounts.find(a => a.status === 'online');
+      if (firstOnline) queryBotId = firstOnline.id;
+    }
+    const bot = state.accounts.find(a => a.id === queryBotId);
     const activeChanId = bot?.currentVoice?.channelId;
 
     guild.voiceChannels.forEach(ch => {
@@ -879,11 +899,56 @@ function handleMusicGuildChange() {
   }
 }
 
+async function connectAllBotsToVoice() {
+  const voiceSelect = document.getElementById('music-voice-select');
+  const guildSelect = document.getElementById('music-guild-select');
+  const channelId = voiceSelect?.value;
+  const guildId = guildSelect?.value || state.selectedGuildId;
+
+  if (!channelId) {
+    return showToast('Please select a Voice Channel first!', 'warn');
+  }
+
+  try {
+    showToast('🚀 Connecting ALL your bots to Voice Channel...', 'info');
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch('/api/accounts/voice/join-all', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        channelId,
+        guildId,
+        keep247: true,
+        selfDeaf: false,
+        selfMute: false
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`🎉 Connected ${data.joinedCount || 'all'} bots to VC 24/7!`, 'success');
+      loadActivePlayer();
+    } else {
+      showToast(data.error || 'Failed to connect all bots', 'error');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+document.getElementById('btn-connect-all-music-voice')?.addEventListener('click', connectAllBotsToVoice);
+
 document.getElementById('btn-connect-music-voice')?.addEventListener('click', async () => {
   const voiceSelect = document.getElementById('music-voice-select');
   const channelId = voiceSelect?.value;
   if (!state.selectedMusicBotId || !channelId) {
     return showToast('Select an account and voice channel first!', 'warn');
+  }
+
+  if (state.selectedMusicBotId === 'ALL_BOTS') {
+    return connectAllBotsToVoice();
   }
 
   try {
@@ -1019,7 +1084,11 @@ async function playTrackDirect(track) {
     });
     const data = await res.json();
     if (data.success) {
-      showToast(data.result.status === 'playing' ? `Now playing: ${track.info.title}` : `Added to queue: ${track.info.title}`, 'success');
+      if (data.massPlay) {
+        showToast(`🔥 Playing "${track.info.title}" on ALL ${data.count} bots!`, 'success');
+      } else {
+        showToast(data.result?.status === 'playing' ? `Now playing: ${track.info.title}` : `Added to queue: ${track.info.title}`, 'success');
+      }
       loadActivePlayer();
     } else {
       showToast(data.error || 'Failed to play track', 'error');
@@ -1047,7 +1116,11 @@ async function addPlaylistToQueue(tracks) {
     });
     const data = await res.json();
     if (data.success) {
-      showToast(`Added ${data.count} songs from playlist to queue!`, 'success');
+      if (data.massPlay) {
+        showToast(`🔥 Playing ${data.count} tracks on ALL ${data.botCount || ''} bots!`, 'success');
+      } else {
+        showToast(`Added ${data.count} songs from playlist to queue!`, 'success');
+      }
       loadActivePlayer();
     }
   } catch (err) {

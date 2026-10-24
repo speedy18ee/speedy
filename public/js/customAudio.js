@@ -513,7 +513,9 @@ class CustomAudioStudio {
       }
 
       if (window.showToast) {
-        if (playMode === 'playNow') {
+        if (data.massPlay) {
+          showToast(`🔥 Playing "${data.track.info.title}" on ALL ${data.botCount || ''} bots!`, 'success');
+        } else if (playMode === 'playNow') {
           showToast(`🎵 Now Playing: "${data.track.info.title}"!`, 'success');
         } else {
           showToast(`✅ Added "${data.track.info.title}" to the queue!`, 'success');
