@@ -1291,7 +1291,6 @@ document.getElementById('btn-clear-queue')?.addEventListener('click', async () =
     showToast('Queue cleared', 'info');
   } catch (e) {}
 });
-});
 
 // Update Now Playing UI
 function updateNowPlayingUI(player) {

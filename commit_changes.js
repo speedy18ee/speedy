@@ -1,6 +1,5 @@
 const git = require('isomorphic-git');
 const fs = require('fs');
-const path = require('path');
 
 const dir = __dirname;
 
@@ -26,7 +25,7 @@ async function commitAll() {
     const sha = await git.commit({
       fs,
       dir,
-      message: 'Isolate music playback and WebSocket events per credential user',
+      message: 'Fix syntax error in app.js and restore tab navigation',
       author: {
         name: 'speedy18ee',
         email: 'speedy@example.com'
