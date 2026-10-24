@@ -8,3 +8,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DISCORD_PROXY
+        value: "http://pldkrffl:sqqoj1cw6sxr@45.38.107.97:6014"

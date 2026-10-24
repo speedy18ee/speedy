@@ -5,6 +5,7 @@ const { Client } = require("discord.js-selfbot-v13");
 const EventEmitter = require("events");
 const database = require("./database");
 const logger = require("./logger");
+const config = require("./config");
 
 class BotManager extends EventEmitter {
   constructor(lavalinkClient) {
@@ -26,11 +27,25 @@ class BotManager extends EventEmitter {
 
     logger.info("BOT", `Starting selfbot account: ${acc.label}...`);
 
-    const client = new Client({
+    const settings = database.getSettings();
+    const proxy = acc.proxy || settings.proxy || process.env.DISCORD_PROXY || config.defaultProxy;
+
+    const clientOptions = {
       checkUpdate: false,
-      restRequestTimeout: 20000,
+      restRequestTimeout: 25000,
       syncStatus: false
-    });
+    };
+
+    if (proxy && typeof proxy === 'string' && proxy.trim()) {
+      let formattedProxy = proxy.trim();
+      if (!formattedProxy.startsWith('http://') && !formattedProxy.startsWith('https://') && !formattedProxy.startsWith('socks5://') && !formattedProxy.startsWith('socks4://')) {
+        formattedProxy = `socks5://${formattedProxy}`;
+      }
+      clientOptions.proxy = formattedProxy;
+      logger.info("BOT", `[${acc.label}] Routing connection via proxy: ${formattedProxy.replace(/:[^:]*@/, ':****@')}`);
+    }
+
+    const client = new Client(clientOptions);
 
     // Guard against Discord API sending null friend_source_flags or other settings
     if (client.settings && client.settings._patch) {

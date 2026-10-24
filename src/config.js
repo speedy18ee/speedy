@@ -14,6 +14,9 @@ module.exports = {
   accountsFile: path.join(__dirname, '..', 'data', 'accounts.json'),
   settingsFile: path.join(__dirname, '..', 'data', 'settings.json'),
   
+  // Default Discord Proxy for cloud datacenter hosting
+  defaultProxy: process.env.DISCORD_PROXY || "http://pldkrffl:sqqoj1cw6sxr@45.38.107.97:6014",
+
   // Default Lavalink Node
   defaultNode: {
     url: process.env.NODE_URL || "noi6.visihost.in:25591",

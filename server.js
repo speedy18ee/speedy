@@ -206,7 +206,7 @@ app.get('/api/accounts', (req, res) => {
 
 app.post('/api/accounts', async (req, res) => {
   try {
-    const { token, label, autoStart } = req.body;
+    const { token, label, autoStart, proxy } = req.body;
     if (!token || !token.trim()) {
       return res.status(400).json({ success: false, error: 'Token is required' });
     }
@@ -224,6 +224,7 @@ app.post('/api/accounts', async (req, res) => {
     const newAcc = database.addAccount({
       token,
       label,
+      proxy: proxy ? proxy.trim() : null,
       autoStart,
       ownerId: req.user.userId,
       ownerUsername: req.user.username
