@@ -349,11 +349,11 @@ class BotManager extends EventEmitter {
     logger.info("BOT", `Starting ${accounts.length} account(s)${userId ? ` for user ${userId}` : ''}...`);
     for (const acc of accounts) {
       if (acc.autoStart !== false) {
-        try {
-          await this.startAccount(acc.id);
-        } catch (err) {
+        this.startAccount(acc.id).catch(err => {
           logger.error("BOT", `Failed to start account ${acc.label}: ${err.message}`);
-        }
+        });
+        // 1-second stagger between bot launches for smooth connection
+        await new Promise(r => setTimeout(r, 1000));
       }
     }
   }
