@@ -618,7 +618,8 @@ app.post('/api/music/custom-audio', async (req, res) => {
 
     const userId = targetBot?.client?.user?.id || null;
     const ownerId = req.user.userId;
-    const isMass = accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true;
+    const isSingle = req.body.singleBot === true;
+    const isMass = !isSingle;
 
     if (isMass) {
       const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
@@ -744,22 +745,35 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
     const ownerId = req.user.userId;
 
     const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
-    const isMass = accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true;
+    const isSingle = req.body.singleBot === true;
+    const isMass = !isSingle;
 
     if (isMass) {
       if (userBots.length === 0) {
         return res.status(400).json({ success: false, error: 'No online bots found under your account to play music' });
       }
 
-      logger.music('MASS_PLAY', `User [${req.user.username}] synchronized mass play: "${track.info?.title}" across ${userBots.length} bots`);
+      // Auto-detect target voice channel if not passed explicitly
+      let targetVcId = channelId;
+      if (!targetVcId) {
+        for (const ub of userBots) {
+          const b = botManager.bots.get(ub.id);
+          if (b && b.currentVoice?.guildId === req.params.guildId && b.currentVoice?.channelId) {
+            targetVcId = b.currentVoice.channelId;
+            break;
+          }
+        }
+      }
+
+      logger.music('MASS_PLAY', `User [${req.user.username}] synchronized mass play: "${track.info?.title}" across ${userBots.length} bots in channel ${targetVcId || 'current'}`);
 
       // 1. Ensure all online bots join the selected voice channel
       let joinedAny = false;
       for (const ub of userBots) {
         const bot = botManager.bots.get(ub.id);
-        if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
+        if (bot && targetVcId && bot.currentVoice?.channelId !== targetVcId) {
           try {
-            await botManager.joinVoice(ub.id, channelId);
+            await botManager.joinVoice(ub.id, targetVcId);
             joinedAny = true;
           } catch (e) {}
         }
@@ -777,7 +791,7 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
         const userId = bot?.client?.user?.id || null;
         const player = lavalink.createPlayer(req.params.guildId, {
           accountId: ub.id,
-          channelId,
+          channelId: targetVcId,
           userId,
           ownerId
         });
@@ -786,7 +800,7 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
         player.filters.bassboost = true;
         return lavalink.play(req.params.guildId, track, {
           accountId: ub.id,
-          channelId,
+          channelId: targetVcId,
           userId,
           ownerId,
           noReplace: true,
@@ -853,15 +867,27 @@ app.post('/api/music/player/:guildId/playlist', async (req, res) => {
     }
     const ownerId = req.user.userId;
     const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
-    const isMass = accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true;
+    const isSingle = req.body.singleBot === true;
+    const isMass = !isSingle;
 
     if (isMass) {
+      let targetVcId = channelId;
+      if (!targetVcId) {
+        for (const ub of userBots) {
+          const b = botManager.bots.get(ub.id);
+          if (b && b.currentVoice?.guildId === req.params.guildId && b.currentVoice?.channelId) {
+            targetVcId = b.currentVoice.channelId;
+            break;
+          }
+        }
+      }
+
       let joinedAny = false;
       for (const ub of userBots) {
         const bot = botManager.bots.get(ub.id);
-        if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
+        if (bot && targetVcId && bot.currentVoice?.channelId !== targetVcId) {
           try {
-            await botManager.joinVoice(ub.id, channelId);
+            await botManager.joinVoice(ub.id, targetVcId);
             joinedAny = true;
           } catch (e) {}
         }

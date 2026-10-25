@@ -1083,7 +1083,8 @@ async function playTrackDirect(track) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         track,
-        accountId: state.selectedMusicBotId,
+        accountId: 'ALL_BOTS',
+        allBots: true,
         channelId
       })
     });
@@ -1115,7 +1116,8 @@ async function addPlaylistToQueue(tracks) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tracks,
-        accountId: state.selectedMusicBotId,
+        accountId: 'ALL_BOTS',
+        allBots: true,
         channelId
       })
     });

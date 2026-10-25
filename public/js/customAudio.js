@@ -447,7 +447,8 @@ class CustomAudioStudio {
 
     let payload = {
       mode: playMode,
-      accountId,
+      accountId: 'ALL_BOTS',
+      allBots: true,
       guildId,
       channelId
     };
