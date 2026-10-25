@@ -581,17 +581,10 @@ class LavalinkClient extends EventEmitter {
     const filtersPayload = {};
 
     // 1. Raw DSP Volume Multiplier (filters.volume in Lavalink v4)
-    // Supports extreme volume boost up to 15.0x (1500%) matching ganil / synced_cluster
+    // Capped at 5.0 max (500%) because lavadsp VolumePcmAudioFilter strictly enforces [0.0 - 5.0]
+    // Combined with player.volume (up to 1000), this achieves 50x (5,000%) amplification without crashing Lavalink
     let volMultiplier = Math.max(0.05, player.volume / 100.0);
-
-    if (player.filters.extremeLoud) {
-      volMultiplier = Math.max(volMultiplier, 10.0);
-    } else if (player.filters.packing) {
-      volMultiplier = Math.max(volMultiplier, 7.0);
-    } else {
-      volMultiplier = Math.min(15.0, volMultiplier);
-    }
-
+    volMultiplier = Math.min(5.0, Math.max(0.05, volMultiplier));
     filtersPayload.volume = Number(volMultiplier.toFixed(2));
 
     // 2. Channel Mixing (Stereo enhancement & maximum loudness gain)
