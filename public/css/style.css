@@ -1310,6 +1310,13 @@ input:checked + .slider:before {
   color: #fff;
 }
 
+.filter-bass-pill.active {
+  background: linear-gradient(135deg, #8b5cf6, #d946ef) !important;
+  border-color: #d946ef !important;
+  color: #fff !important;
+  box-shadow: 0 0 15px rgba(217, 70, 239, 0.6) !important;
+}
+
 .filter-loud-pill.active {
   background: linear-gradient(135deg, #ff416c, #ff4b2b) !important;
   border-color: #ff4b2b !important;

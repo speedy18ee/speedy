@@ -618,8 +618,9 @@ app.post('/api/music/custom-audio', async (req, res) => {
 
     const userId = targetBot?.client?.user?.id || null;
     const ownerId = req.user.userId;
+    const isMass = accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true;
 
-    if (accountId === 'ALL_BOTS') {
+    if (isMass) {
       const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
       if (userBots.length === 0) {
         return res.status(400).json({ success: false, error: 'No online bots found under your credentials' });
@@ -628,13 +629,19 @@ app.post('/api/music/custom-audio', async (req, res) => {
       logger.music('MASS_PLAY', `User [${req.user.username}] triggering ALL BOTS (${userBots.length}) audio playback: "${displayTitle}"`);
 
       // Ensure all online bots join target voice channel
+      let joinedAny = false;
       for (const ub of userBots) {
         const b = botManager.bots.get(ub.id);
         if (b && targetChannelId && b.currentVoice?.channelId !== targetChannelId) {
           try {
             await botManager.joinVoice(ub.id, targetChannelId);
+            joinedAny = true;
           } catch (e) {}
         }
+      }
+
+      if (joinedAny) {
+        await new Promise(r => setTimeout(r, 1000));
       }
 
       const massPromises = userBots.map(async (ub) => {
@@ -736,26 +743,44 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
     if (!track) return res.status(400).json({ success: false, error: 'Track payload required' });
     const ownerId = req.user.userId;
 
-    if (accountId === 'ALL_BOTS') {
-      const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    const isMass = accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true;
+
+    if (isMass) {
       if (userBots.length === 0) {
-        return res.status(400).json({ success: false, error: 'No online bots found to play music' });
+        return res.status(400).json({ success: false, error: 'No online bots found under your account to play music' });
       }
 
-      logger.music('MASS_PLAY', `User [${req.user.username}] mass playing "${track.info?.title}" across ${userBots.length} bots`);
+      logger.music('MASS_PLAY', `User [${req.user.username}] synchronized mass play: "${track.info?.title}" across ${userBots.length} bots`);
 
-      // Connect all bots to VC if not already in
+      // 1. Ensure all online bots join the selected voice channel
+      let joinedAny = false;
       for (const ub of userBots) {
         const bot = botManager.bots.get(ub.id);
         if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
-          try { await botManager.joinVoice(ub.id, channelId); } catch (e) {}
+          try {
+            await botManager.joinVoice(ub.id, channelId);
+            joinedAny = true;
+          } catch (e) {}
         }
       }
 
+      // If any bot joined, allow 1000ms for voice handshakes to establish on Lavalink
+      if (joinedAny) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      // 2. Dispatch synchronized track play across all online bots simultaneously
       const massPromises = userBots.map(async (ub) => {
         const bot = botManager.bots.get(ub.id);
         const userId = bot?.client?.user?.id || null;
-        return lavalink.play(req.params.guildId, track, { accountId: ub.id, channelId, userId, ownerId });
+        return lavalink.play(req.params.guildId, track, {
+          accountId: ub.id,
+          channelId,
+          userId,
+          ownerId,
+          noReplace: true // Synchronized immediate start for all bots
+        });
       });
 
       await Promise.allSettled(massPromises);
@@ -772,13 +797,19 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
       if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
         try {
           await botManager.joinVoice(accountId, channelId);
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 900));
         } catch (vErr) {
           logger.warn('BOT', `Auto-join voice warning: ${vErr.message}`);
         }
       }
     }
-    const result = await lavalink.play(req.params.guildId, track, { accountId, channelId, userId, ownerId });
+    const result = await lavalink.play(req.params.guildId, track, {
+      accountId,
+      channelId,
+      userId,
+      ownerId,
+      noReplace: true
+    });
     res.json({ success: true, result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -792,20 +823,35 @@ app.post('/api/music/player/:guildId/playlist', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Tracks array required' });
     }
     const ownerId = req.user.userId;
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    const isMass = accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true;
 
-    if (accountId === 'ALL_BOTS') {
-      const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    if (isMass) {
+      let joinedAny = false;
       for (const ub of userBots) {
         const bot = botManager.bots.get(ub.id);
         if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
-          try { await botManager.joinVoice(ub.id, channelId); } catch (e) {}
+          try {
+            await botManager.joinVoice(ub.id, channelId);
+            joinedAny = true;
+          } catch (e) {}
         }
+      }
+
+      if (joinedAny) {
+        await new Promise(r => setTimeout(r, 1000));
       }
 
       const massPromises = userBots.map(async (ub) => {
         const bot = botManager.bots.get(ub.id);
         const userId = bot?.client?.user?.id || null;
-        return lavalink.addPlaylist(req.params.guildId, tracks, { accountId: ub.id, channelId, userId, ownerId });
+        return lavalink.addPlaylist(req.params.guildId, tracks, {
+          accountId: ub.id,
+          channelId,
+          userId,
+          ownerId,
+          noReplace: true
+        });
       });
 
       await Promise.allSettled(massPromises);
@@ -822,13 +868,13 @@ app.post('/api/music/player/:guildId/playlist', async (req, res) => {
       if (bot && channelId && bot.currentVoice?.channelId !== channelId) {
         try {
           await botManager.joinVoice(accountId, channelId);
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 900));
         } catch (vErr) {
           logger.warn('BOT', `Auto-join voice warning: ${vErr.message}`);
         }
       }
     }
-    await lavalink.addPlaylist(req.params.guildId, tracks, { accountId, channelId, userId, ownerId });
+    await lavalink.addPlaylist(req.params.guildId, tracks, { accountId, channelId, userId, ownerId, noReplace: true });
     res.json({ success: true, count: tracks.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

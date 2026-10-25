@@ -803,8 +803,8 @@ function populateMusicBotSelect() {
   if (onlineBots.length > 0) {
     const allOpt = document.createElement('option');
     allOpt.value = 'ALL_BOTS';
-    allOpt.textContent = `⚡ ALL BOTS (${onlineBots.length} Bots Mass Play)`;
-    if (state.selectedMusicBotId === 'ALL_BOTS') allOpt.selected = true;
+    allOpt.textContent = `⚡ ALL BOTS (${onlineBots.length} Bots Synced Play)`;
+    if (state.selectedMusicBotId === 'ALL_BOTS' || !state.selectedMusicBotId) allOpt.selected = true;
     botSelect.appendChild(allOpt);
   }
 
@@ -817,8 +817,8 @@ function populateMusicBotSelect() {
   });
 
   if (!state.selectedMusicBotId && onlineBots.length > 0) {
-    state.selectedMusicBotId = onlineBots.length > 1 ? 'ALL_BOTS' : onlineBots[0].id;
-    botSelect.value = state.selectedMusicBotId;
+    state.selectedMusicBotId = 'ALL_BOTS';
+    botSelect.value = 'ALL_BOTS';
     handleMusicBotChange();
   }
 }

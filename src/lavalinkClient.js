@@ -518,6 +518,7 @@ class LavalinkClient extends EventEmitter {
       const filtersPayload = this.buildFiltersPayload(player);
       await this.sendPlayerUpdate(guildId, {
         track: { encoded: track.encoded },
+        position: 0,
         volume: Math.min(1000, player.volume),
         filters: filtersPayload
       }, player.userId);
@@ -532,11 +533,11 @@ class LavalinkClient extends EventEmitter {
     const player = this.createPlayer(guildId, options);
     if (!tracks || tracks.length === 0) return;
 
-    if (!player.playing) {
+    if (!player.playing || options.noReplace) {
       const first = tracks[0];
       const rest = tracks.slice(1);
-      player.queue.push(...rest);
-      await this.play(guildId, first, options);
+      player.queue = [...rest];
+      await this.play(guildId, first, { ...options, noReplace: true });
     } else {
       player.queue.push(...tracks);
       this.emit('queueUpdate', player);
@@ -679,13 +680,15 @@ class LavalinkClient extends EventEmitter {
         { band: 14, gain: 0.35 }
       ];
     } else if (player.filters.bassboost) {
-      // Explicit bass boost (only if user chooses bassboost)
+      // Explicit heavy bass boost (Max sub-bass punch modeled after ganil)
       filtersPayload.equalizer = [
-        { band: 0, gain: 0.45 },
-        { band: 1, gain: 0.40 },
-        { band: 2, gain: 0.30 },
-        { band: 3, gain: 0.20 },
-        { band: 4, gain: 0.10 }
+        { band: 0, gain: 0.65 },
+        { band: 1, gain: 0.60 },
+        { band: 2, gain: 0.50 },
+        { band: 3, gain: 0.35 },
+        { band: 4, gain: 0.20 },
+        { band: 5, gain: 0.05 },
+        { band: 6, gain: 0.00 }
       ];
     } else if (player.volume > 200) {
       // Dynamic loudness with bass cut for high volume clarity
