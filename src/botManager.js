@@ -7,14 +7,18 @@ const database = require("./database");
 const logger = require("./logger");
 const config = require("./config");
 
-// Verified fast & working proxy pool for multi-bot Discord Gateway connections
+// Verified fast & working proxy pool for multi-bot Discord Gateway connections (Webshare 10 Proxies)
 const WORKING_PROXIES = [
-  'http://pldkrffl:sqqoj1cw6sxr@64.137.10.153:5803',
-  'http://pldkrffl:sqqoj1cw6sxr@45.38.107.97:6014',
-  'http://pldkrffl:sqqoj1cw6sxr@38.154.185.97:6370',
-  'http://pldkrffl:sqqoj1cw6sxr@198.46.161.42:5092',
-  'http://pldkrffl:sqqoj1cw6sxr@104.164.49.38:7693',
-  'http://pldkrffl:sqqoj1cw6sxr@23.26.71.145:5628'
+  'http://nzpqvgqf:9e8j1sjfnbyh@198.23.243.226:6361',
+  'http://nzpqvgqf:9e8j1sjfnbyh@84.247.60.125:6095',
+  'http://nzpqvgqf:9e8j1sjfnbyh@191.96.254.138:6185',
+  'http://nzpqvgqf:9e8j1sjfnbyh@104.164.49.38:7693',
+  'http://nzpqvgqf:9e8j1sjfnbyh@23.26.71.145:5628',
+  'http://nzpqvgqf:9e8j1sjfnbyh@198.46.161.42:5092',
+  'http://nzpqvgqf:9e8j1sjfnbyh@64.137.10.153:5803',
+  'http://nzpqvgqf:9e8j1sjfnbyh@38.154.185.97:6370',
+  'http://nzpqvgqf:9e8j1sjfnbyh@64.137.96.74:6641',
+  'http://nzpqvgqf:9e8j1sjfnbyh@45.38.107.97:6014'
 ];
 
 class BotManager extends EventEmitter {
@@ -36,19 +40,28 @@ class BotManager extends EventEmitter {
     }
 
     const settings = database.getSettings();
+    const isOldDeadProxy = (p) => p && p.includes('pldkrffl');
     const candidateProxies = [];
-    if (acc.proxy && acc.proxy.trim()) {
+
+    if (acc.proxy && acc.proxy.trim() && !isOldDeadProxy(acc.proxy)) {
       candidateProxies.push(acc.proxy.trim());
     }
-    if (settings.proxy && settings.proxy.trim() && !candidateProxies.includes(settings.proxy.trim())) {
+    if (settings.proxy && settings.proxy.trim() && !candidateProxies.includes(settings.proxy.trim()) && !isOldDeadProxy(settings.proxy)) {
       candidateProxies.push(settings.proxy.trim());
     }
-    if (process.env.DISCORD_PROXY && process.env.DISCORD_PROXY.trim() && !candidateProxies.includes(process.env.DISCORD_PROXY.trim())) {
+    if (process.env.DISCORD_PROXY && process.env.DISCORD_PROXY.trim() && !candidateProxies.includes(process.env.DISCORD_PROXY.trim()) && !isOldDeadProxy(process.env.DISCORD_PROXY)) {
       candidateProxies.push(process.env.DISCORD_PROXY.trim());
     }
 
-    // Add all working proxies as fallbacks
-    for (const p of WORKING_PROXIES) {
+    // Rotate 10 Webshare proxies so each bot gets its own unique primary IP address
+    let hash = 0;
+    for (let c = 0; c < accountId.length; c++) hash = (hash + accountId.charCodeAt(c)) % WORKING_PROXIES.length;
+    const rotatedPool = [
+      ...WORKING_PROXIES.slice(hash),
+      ...WORKING_PROXIES.slice(0, hash)
+    ];
+
+    for (const p of rotatedPool) {
       if (!candidateProxies.includes(p)) candidateProxies.push(p);
     }
     if (candidateProxies.length === 0) candidateProxies.push(null);
@@ -292,11 +305,11 @@ class BotManager extends EventEmitter {
       throw new Error("Token is empty or invalid format");
     }
 
-    // Login with account token with 40s timeout
+    // Login with account token with 20s timeout
     try {
       await Promise.race([
         client.login(cleanToken),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 40s (retrying with next proxy...)")), 40000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 20s (retrying with next proxy...)")), 20000))
       ]);
     } catch (err) {
       try { client.destroy(); } catch (_) {}
