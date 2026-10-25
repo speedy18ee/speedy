@@ -206,6 +206,16 @@
         </div>
       </div>
       <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button class="btn btn-sm btn-outline" style="border-color: #a855f7; color: #c084fc;" onclick="syncToCloudNow()" id="btn-cloud-sync" title="Sync users & bots permanently to Render Cloud">
+          <i class="fa-solid fa-cloud-arrow-up"></i> <span id="cloud-sync-text">Cloud Sync</span>
+        </button>
+        <button class="btn btn-sm btn-outline" onclick="downloadBackup()" title="Download offline backup of all credentials & bots">
+          <i class="fa-solid fa-download"></i> Backup (.json)
+        </button>
+        <label class="btn btn-sm btn-outline" style="cursor: pointer; margin: 0;" title="Restore credentials & bots from backup file">
+          <i class="fa-solid fa-upload"></i> Restore
+          <input type="file" id="file-restore-input" accept=".json" style="display: none;" onchange="handleRestoreFile(event)">
+        </label>
         <a href="/login" class="btn btn-outline" style="text-decoration: none;">
           <i class="fa-solid fa-arrow-right-to-bracket"></i> Login Page
         </a>
@@ -321,6 +331,6 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="js/admin.js"></script>
+  <script src="js/admin.js?v=4.1"></script>
 </body>
 </html>

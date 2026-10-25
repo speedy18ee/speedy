@@ -15,5 +15,22 @@
     "createdAt": "2026-10-23T15:15:14.647Z",
     "lastLogin": "2026-10-24T08:24:06.585Z",
     "botLimit": 11
+  },
+  {
+    "id": "usr_mvl47tnm199779",
+    "username": "RED",
+    "password": "1",
+    "hwid": "HWID-2EB757AB171C81CEC48072C8D035EE4A",
+    "status": "active",
+    "note": "BYER FROM DISCORD",
+    "boundDevice": {
+      "platform": "PC / Desktop (Win32)",
+      "browser": "Chrome",
+      "screen": "1920x1080",
+      "boundAt": "2026-10-23T15:19:24.197Z"
+    },
+    "createdAt": "2026-10-23T15:18:55.714Z",
+    "lastLogin": "2026-10-24T13:13:00.000Z",
+    "botLimit": 10
   }
 ]

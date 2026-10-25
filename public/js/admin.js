@@ -89,7 +89,41 @@ async function loadUsersTable() {
       return showToast(data.error || 'Failed to load credentials', 'error');
     }
 
-    renderUsers(data.users);
+    const currentUsers = data.users || [];
+    renderUsers(currentUsers);
+
+    // Auto-Recovery Check: Compare with browser offline backup
+    try {
+      const rawBackup = localStorage.getItem('exc_admin_users_backup');
+      if (rawBackup) {
+        const backupUsers = JSON.parse(rawBackup);
+        if (Array.isArray(backupUsers) && backupUsers.length > 0) {
+          const missingUsers = backupUsers.filter(bu => 
+            !currentUsers.some(cu => cu.username.toLowerCase() === bu.username.toLowerCase())
+          );
+          if (missingUsers.length > 0) {
+            console.log(`[EXC AUTO-RECOVERY] Detected ${missingUsers.length} missing user(s) from local backup. Restoring...`);
+            const restoreRes = await fetch('/api/admin/restore', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${adminToken}`
+              },
+              body: JSON.stringify({ users: missingUsers })
+            });
+            const restoreData = await restoreRes.json();
+            if (restoreData.success && restoreData.restoredUsers > 0) {
+              showToast(`🛡️ Auto-restored ${restoreData.restoredUsers} user credential(s) from browser safety backup!`, 'success');
+              return loadUsersTable();
+            }
+          }
+        }
+      }
+      // Update local storage backup with latest server data
+      localStorage.setItem('exc_admin_users_backup', JSON.stringify(currentUsers));
+    } catch (e) {
+      console.warn('Backup check error:', e);
+    }
   } catch (err) {
     showToast('Failed to load users', 'error');
   }
@@ -350,3 +384,104 @@ function showToast(message, type = 'info') {
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
 }
+
+// --- CLOUD PERSISTENCE & DATA PROTECTION ---
+
+async function syncToCloudNow() {
+  const btn = document.getElementById('btn-cloud-sync');
+  const txt = document.getElementById('cloud-sync-text');
+  if (btn) btn.disabled = true;
+  if (txt) txt.textContent = 'Syncing...';
+
+  try {
+    const res = await fetch('/api/admin/sync-cloud', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`☁️ Cloud Persistence Synced: Saved ${data.usersCount || 'all'} user(s) permanently to Render!`, 'success');
+      if (txt) txt.textContent = 'Synced!';
+      setTimeout(() => { if (txt) txt.textContent = 'Cloud Sync'; }, 3000);
+    } else {
+      showToast(data.error || data.reason || 'Sync failed', 'error');
+      if (txt) txt.textContent = 'Cloud Sync';
+    }
+  } catch (err) {
+    showToast('Failed to connect to sync endpoint', 'error');
+    if (txt) txt.textContent = 'Cloud Sync';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function downloadBackup() {
+  try {
+    const res = await fetch('/api/admin/backup', {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (!data.success) {
+      return showToast('Failed to fetch backup data', 'error');
+    }
+
+    const jsonStr = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `exc_credentials_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('📥 Backup file downloaded successfully!', 'success');
+  } catch (e) {
+    showToast('Error exporting backup file', 'error');
+  }
+}
+
+async function handleRestoreFile(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (event) => {
+    try {
+      const parsed = JSON.parse(event.target.result);
+      const users = parsed.users || (Array.isArray(parsed) ? parsed : null);
+      const accounts = parsed.accounts || null;
+
+      if (!users && !accounts) {
+        return showToast('Invalid backup file format', 'error');
+      }
+
+      const res = await fetch('/api/admin/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({ users, accounts })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast(`✅ Restored ${data.restoredUsers} user(s) and ${data.restoredAccounts} bot account(s)!`, 'success');
+        loadUsersTable();
+      } else {
+        showToast(data.error || 'Restore failed', 'error');
+      }
+    } catch (err) {
+      showToast(`Failed to parse backup JSON: ${err.message}`, 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Keep Render alive while admin page is open
+setInterval(() => {
+  fetch('/api/ping').catch(() => {});
+}, 45 * 1000);

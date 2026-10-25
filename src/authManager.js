@@ -22,6 +22,40 @@ class AuthManager {
       ...u,
       botLimit: typeof u.botLimit === 'number' ? u.botLimit : 10
     }));
+
+    // Rehydrate from Render Cloud PERSISTENT_USERS environment variable if present
+    const envUsersRaw = process.env.PERSISTENT_USERS || process.env.USERS_DATA;
+    if (envUsersRaw) {
+      try {
+        const envUsers = JSON.parse(envUsersRaw);
+        if (Array.isArray(envUsers)) {
+          let mergedCount = 0;
+          for (const u of envUsers) {
+            if (!u || !u.username) continue;
+            const existing = this.users.find(x => x.username.toLowerCase() === u.username.toLowerCase());
+            if (!existing) {
+              this.users.push({
+                ...u,
+                botLimit: typeof u.botLimit === 'number' ? u.botLimit : 10
+              });
+              mergedCount++;
+            } else {
+              // Update existing with cloud persistent data
+              if (u.password) existing.password = u.password;
+              if (u.hwid && !existing.hwid) existing.hwid = u.hwid;
+              if (typeof u.botLimit === 'number') existing.botLimit = u.botLimit;
+            }
+          }
+          if (mergedCount > 0) {
+            logger.info('AUTH', `Merged ${mergedCount} persistent user(s) from Render Cloud environment.`);
+            this.saveUsers(false); // save to local disk without re-triggering sync
+          }
+        }
+      } catch (e) {
+        logger.error('AUTH', `Error parsing PERSISTENT_USERS env var: ${e.message}`);
+      }
+    }
+
     this.adminConfig = this.loadJSON(this.adminFile, {
       adminKey: 'admin123', // Default admin panel password
       dashboardName: 'EXC'
@@ -45,11 +79,17 @@ class AuthManager {
     return fallback;
   }
 
-  saveUsers() {
+  saveUsers(triggerSync = true) {
     try {
       const tmp = `${this.usersFile}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(this.users, null, 2), 'utf-8');
       fs.renameSync(tmp, this.usersFile);
+      if (triggerSync) {
+        try {
+          const cloudSync = require('./cloudSync');
+          cloudSync.scheduleSync(4000);
+        } catch (e) {}
+      }
     } catch (e) {
       logger.error('AUTH', `Failed to save users: ${e.message}`);
     }
@@ -274,6 +314,39 @@ class AuthManager {
       createdAt: u.createdAt,
       lastLogin: u.lastLogin
     }));
+  }
+
+  restoreUsers(importedUsers) {
+    let count = 0;
+    if (!Array.isArray(importedUsers)) return 0;
+    for (const u of importedUsers) {
+      if (!u || !u.username || !u.password) continue;
+      const existing = this.users.find(x => x.username.toLowerCase() === u.username.toLowerCase());
+      if (!existing) {
+        this.users.push({
+          id: u.id || `usr_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`,
+          username: u.username,
+          password: u.password,
+          hwid: u.hwid || null,
+          status: u.status || 'active',
+          note: u.note || 'Restored User',
+          boundDevice: u.boundDevice || null,
+          createdAt: u.createdAt || new Date().toISOString(),
+          lastLogin: u.lastLogin || null,
+          botLimit: typeof u.botLimit === 'number' ? u.botLimit : 10
+        });
+        count++;
+      } else {
+        existing.password = u.password;
+        if (u.hwid && !existing.hwid) existing.hwid = u.hwid;
+        if (typeof u.botLimit === 'number') existing.botLimit = u.botLimit;
+      }
+    }
+    if (count > 0) {
+      this.saveUsers();
+      logger.success('AUTH', `Restored ${count} user(s) into database.`);
+    }
+    return count;
   }
 }
 

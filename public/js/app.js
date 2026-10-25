@@ -1948,3 +1948,8 @@ async function executeMassLeaveVoice() {
 window.addEventListener('DOMContentLoaded', () => {
   checkUserAuth();
 });
+
+// Periodic ping to keep Render server awake 24/7 while dashboard is open
+setInterval(() => {
+  fetch('/api/ping').catch(() => {});
+}, 45 * 1000);

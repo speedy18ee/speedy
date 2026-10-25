@@ -81,6 +81,25 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// --- RENDER 24/7 KEEP-ALIVE & STATUS PING ---
+app.get(['/api/ping', '/healthz'], (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
+    timestamp: Date.now()
+  });
+});
+
+// Self-ping every 4 minutes to guarantee Render container stays awake 24/7
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || 'https://exc-selfbot.onrender.com';
+setInterval(() => {
+  if (RENDER_EXTERNAL_URL && RENDER_EXTERNAL_URL.startsWith('http')) {
+    fetch(`${RENDER_EXTERNAL_URL}/api/ping`)
+      .then(r => r.json())
+      .catch(() => {});
+  }
+}, 4 * 60 * 1000);
+
 // --- ADMIN MANAGEMENT ENDPOINTS ---
 app.post('/api/admin/login', (req, res) => {
   try {
@@ -101,6 +120,54 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
 
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   res.json({ success: true, users: authManager.getUsersList() });
+});
+
+app.get('/api/admin/backup', requireAdmin, (req, res) => {
+  res.json({
+    success: true,
+    users: authManager.getUsersList(),
+    accounts: database.accounts,
+    settings: database.settings
+  });
+});
+
+app.post('/api/admin/restore', requireAdmin, (req, res) => {
+  try {
+    const { users, accounts } = req.body;
+    let restoredUsers = 0;
+    let restoredAccounts = 0;
+    if (Array.isArray(users)) {
+      restoredUsers = authManager.restoreUsers(users);
+    }
+    if (Array.isArray(accounts)) {
+      restoredAccounts = database.restoreAccounts(accounts);
+    }
+    logger.success('ADMIN', `Manual/Auto restore executed: ${restoredUsers} user(s), ${restoredAccounts} bot(s).`);
+    res.json({ success: true, restoredUsers, restoredAccounts });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+const cloudSync = require('./src/cloudSync');
+
+app.get('/api/admin/cloud-status', requireAdmin, (req, res) => {
+  res.json({
+    success: true,
+    available: cloudSync.isAvailable(),
+    lastSync: cloudSync.lastSync,
+    usersCount: authManager.users.length,
+    accountsCount: database.accounts.length
+  });
+});
+
+app.post('/api/admin/sync-cloud', requireAdmin, async (req, res) => {
+  try {
+    const result = await cloudSync.syncNow();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/admin/users', requireAdmin, (req, res) => {
