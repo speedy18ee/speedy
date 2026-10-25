@@ -432,7 +432,7 @@ class LavalinkClient extends EventEmitter {
       channelId: options.channelId || null,
       playing: false,
       paused: false,
-      volume: 100,
+      volume: 1000,
       position: 0,
       ping: 0,
       connected: false,
@@ -442,7 +442,7 @@ class LavalinkClient extends EventEmitter {
       voice: null,
       filters: {
         clarity: false,
-        bassboost: false,
+        bassboost: true,
         nightcore: false,
         vaporwave: false,
         eightD: false,
@@ -516,16 +516,18 @@ class LavalinkClient extends EventEmitter {
       player.currentTrack = track;
       player.position = 0;
       const filtersPayload = this.buildFiltersPayload(player);
+      const isPaused = options.startPaused === true;
       await this.sendPlayerUpdate(guildId, {
         track: { encoded: track.encoded },
         position: 0,
+        paused: isPaused,
         volume: Math.min(1000, player.volume),
         filters: filtersPayload
       }, player.userId);
       player.playing = true;
-      player.paused = false;
+      player.paused = isPaused;
       this.emit('trackStart', { player, track });
-      return { status: 'playing', track };
+      return { status: isPaused ? 'buffered' : 'playing', track };
     }
   }
 
@@ -579,38 +581,33 @@ class LavalinkClient extends EventEmitter {
     const filtersPayload = {};
 
     // 1. Raw DSP Volume Multiplier (filters.volume in Lavalink v4)
-    // Kept at a clean, high multiplier without digital clipping distortion
+    // Supports extreme volume boost up to 15.0x (1500%) matching ganil / synced_cluster
     let volMultiplier = Math.max(0.05, player.volume / 100.0);
 
-    if (player.filters.extremeLoud || player.filters.packing) {
-      volMultiplier = 3.8; // Clean extreme loudness without harsh clipping
+    if (player.filters.extremeLoud) {
+      volMultiplier = Math.max(volMultiplier, 10.0);
+    } else if (player.filters.packing) {
+      volMultiplier = Math.max(volMultiplier, 7.0);
     } else {
-      volMultiplier = Math.min(3.8, volMultiplier);
+      volMultiplier = Math.min(15.0, volMultiplier);
     }
 
     filtersPayload.volume = Number(volMultiplier.toFixed(2));
 
-    // 2. Channel Mixing (Stereo clarity enhancement without muddy mono phase buildup)
-    if (player.filters.extremeLoud) {
+    // 2. Channel Mixing (Stereo enhancement & maximum loudness gain)
+    if (player.filters.extremeLoud || player.volume >= 500) {
+      filtersPayload.channelMix = {
+        leftToLeft: 1.5,
+        leftToRight: 0.25,
+        rightToLeft: 0.25,
+        rightToRight: 1.5
+      };
+    } else if (player.volume > 150) {
       filtersPayload.channelMix = {
         leftToLeft: 1.25,
         leftToRight: 0.15,
         rightToLeft: 0.15,
         rightToRight: 1.25
-      };
-    } else if (player.filters.packing) {
-      filtersPayload.channelMix = {
-        leftToLeft: 1.35,
-        leftToRight: 0.20,
-        rightToLeft: 0.20,
-        rightToRight: 1.35
-      };
-    } else if (player.volume > 150) {
-      filtersPayload.channelMix = {
-        leftToLeft: 1.15,
-        leftToRight: 0.10,
-        rightToLeft: 0.10,
-        rightToRight: 1.15
       };
     } else {
       filtersPayload.channelMix = {
@@ -621,25 +618,44 @@ class LavalinkClient extends EventEmitter {
       };
     }
 
-    // 3. Equalizer Bands - BASS REMOVED & CLEAN CRYSTAL VOCAL/TREBLE EXTREME
-    if (player.filters.extremeLoud) {
-      // Aggressive low-cut (sub-bass & boomy bass removed), heavy vocal & treble presence
+    // 3. Equalizer Bands - Heavy 15dB 60Hz Bass Punch + Maximum Loudness Clarity
+    if (player.filters.bassboost) {
+      // Exact heavy 15dB 60Hz punch curve matching ganil/synced_cluster.js
       filtersPayload.equalizer = [
-        { band: 0, gain: -0.28 }, // 25 Hz  - Sub-bass rumble removed
-        { band: 1, gain: -0.24 }, // 40 Hz  - Deep bass cut
-        { band: 2, gain: -0.18 }, // 63 Hz  - Boomy bass cut
-        { band: 3, gain: -0.08 }, // 100 Hz - Upper bass reduced
-        { band: 4, gain: 0.00 },  // 160 Hz - Neutral transition
-        { band: 5, gain: 0.18 },  // 250 Hz - Low mid presence
-        { band: 6, gain: 0.28 },  // 400 Hz - Vocal warmth
-        { band: 7, gain: 0.38 },  // 630 Hz - Vocal body
-        { band: 8, gain: 0.48 },  // 1.0 kHz - Crystal vocal clarity
-        { band: 9, gain: 0.55 },  // 1.6 kHz - High speech definition
-        { band: 10, gain: 0.55 }, // 2.5 kHz - Razor-sharp edge
-        { band: 11, gain: 0.50 }, // 4.0 kHz - Crisp brightness
-        { band: 12, gain: 0.45 }, // 6.3 kHz - Treble clarity
-        { band: 13, gain: 0.40 }, // 10 kHz  - Top air
-        { band: 14, gain: 0.35 }  // 16 kHz  - Ultra-high definition
+        { band: 0, gain: 0.80 }, // 25 Hz sub-bass rumble
+        { band: 1, gain: 0.95 }, // 40 Hz deep bass drop
+        { band: 2, gain: 1.00 }, // 63 Hz peak punch (exact 15dB kick)
+        { band: 3, gain: 0.80 }, // 100 Hz punch
+        { band: 4, gain: 0.45 }, // 160 Hz upper punch
+        { band: 5, gain: 0.20 }, // 250 Hz low mid
+        { band: 6, gain: 0.15 }, // 400 Hz warmth
+        { band: 7, gain: 0.25 }, // 630 Hz vocal body
+        { band: 8, gain: 0.35 }, // 1.0 kHz crystal vocal
+        { band: 9, gain: 0.40 }, // 1.6 kHz presence
+        { band: 10, gain: 0.45 }, // 2.5 kHz razor edge
+        { band: 11, gain: 0.40 }, // 4.0 kHz crisp highs
+        { band: 12, gain: 0.35 }, // 6.3 kHz treble air
+        { band: 13, gain: 0.30 }, // 10 kHz
+        { band: 14, gain: 0.25 }  // 16 kHz
+      ];
+    } else if (player.filters.extremeLoud) {
+      // Aggressive low-cut only when bassboost is explicitly turned off
+      filtersPayload.equalizer = [
+        { band: 0, gain: -0.28 },
+        { band: 1, gain: -0.24 },
+        { band: 2, gain: -0.18 },
+        { band: 3, gain: -0.08 },
+        { band: 4, gain: 0.00 },
+        { band: 5, gain: 0.18 },
+        { band: 6, gain: 0.28 },
+        { band: 7, gain: 0.38 },
+        { band: 8, gain: 0.48 },
+        { band: 9, gain: 0.55 },
+        { band: 10, gain: 0.55 },
+        { band: 11, gain: 0.50 },
+        { band: 12, gain: 0.45 },
+        { band: 13, gain: 0.40 },
+        { band: 14, gain: 0.35 }
       ];
     } else if (player.filters.packing) {
       // Packing voice-cut EQ (Bass fully removed, maximum voice projection)
@@ -678,17 +694,6 @@ class LavalinkClient extends EventEmitter {
         { band: 12, gain: 0.45 },
         { band: 13, gain: 0.40 },
         { band: 14, gain: 0.35 }
-      ];
-    } else if (player.filters.bassboost) {
-      // Explicit heavy bass boost (Max sub-bass punch modeled after ganil)
-      filtersPayload.equalizer = [
-        { band: 0, gain: 0.65 },
-        { band: 1, gain: 0.60 },
-        { band: 2, gain: 0.50 },
-        { band: 3, gain: 0.35 },
-        { band: 4, gain: 0.20 },
-        { band: 5, gain: 0.05 },
-        { band: 6, gain: 0.00 }
       ];
     } else if (player.volume > 200) {
       // Dynamic loudness with bass cut for high volume clarity

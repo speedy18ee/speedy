@@ -1176,6 +1176,26 @@ document.getElementById('btn-stop-track')?.addEventListener('click', async () =>
   } catch (e) {}
 });
 
+// Sync All Bots (Atomic Lockstep Alignment)
+document.getElementById('btn-sync-bots')?.addEventListener('click', async () => {
+  if (!state.selectedGuildId) return;
+  try {
+    const res = await fetch(`/api/music/player/${state.selectedGuildId}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`⚡ Synchronized ${data.syncedBots} bots to exact track & position!`, 'success');
+      fetchPlayerState();
+    } else {
+      showToast(data.error || 'Failed to sync bots', 'warning');
+    }
+  } catch (e) {
+    showToast('Sync request error', 'error');
+  }
+});
+
 // Loop
 document.getElementById('btn-loop-mode')?.addEventListener('click', async () => {
   if (!state.selectedGuildId || !state.activePlayer) return;

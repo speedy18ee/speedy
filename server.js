@@ -765,25 +765,54 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
         }
       }
 
-      // If any bot joined, allow 1000ms for voice handshakes to establish on Lavalink
+      // If any bot joined, allow 1200ms for voice UDP handshakes to fully establish
       if (joinedAny) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1200));
       }
 
-      // 2. Dispatch synchronized track play across all online bots simultaneously
-      const massPromises = userBots.map(async (ub) => {
+      // 2. Pre-buffer track for all online bots in PAUSED state at 0:00
+      // Synchronize player queue, volume (1000%), and bassboost across all bots
+      await Promise.allSettled(userBots.map(async (ub) => {
         const bot = botManager.bots.get(ub.id);
         const userId = bot?.client?.user?.id || null;
+        const player = lavalink.createPlayer(req.params.guildId, {
+          accountId: ub.id,
+          channelId,
+          userId,
+          ownerId
+        });
+        player.queue = [];
+        player.volume = 1000;
+        player.filters.bassboost = true;
         return lavalink.play(req.params.guildId, track, {
           accountId: ub.id,
           channelId,
           userId,
           ownerId,
-          noReplace: true // Synchronized immediate start for all bots
+          noReplace: true,
+          startPaused: true // Pre-buffer at 0:00
         });
-      });
+      }));
 
-      await Promise.allSettled(massPromises);
+      // 3. Buffer completion barrier (180ms)
+      await new Promise(r => setTimeout(r, 180));
+
+      // 4. Atomic release barrier: unpause all bots at position 0 simultaneously
+      await Promise.allSettled(userBots.map(async (ub) => {
+        const bot = botManager.bots.get(ub.id);
+        const userId = bot?.client?.user?.id || null;
+        const player = lavalink.getPlayer(req.params.guildId, ub.id, ownerId);
+        if (player) {
+          player.paused = false;
+          player.playing = true;
+          player.position = 0;
+        }
+        return lavalink.sendPlayerUpdate(req.params.guildId, {
+          paused: false,
+          position: 0
+        }, userId);
+      }));
+
       return res.json({ success: true, massPlay: true, count: userBots.length, result: { status: 'playing', track } });
     }
 
@@ -819,7 +848,7 @@ app.post('/api/music/player/:guildId/play', async (req, res) => {
 app.post('/api/music/player/:guildId/playlist', async (req, res) => {
   try {
     const { tracks, accountId, channelId } = req.body;
-    if (!tracks || !Array.isArray(tracks)) {
+    if (!tracks || !Array.isArray(tracks) || tracks.length === 0) {
       return res.status(400).json({ success: false, error: 'Tracks array required' });
     }
     const ownerId = req.user.userId;
@@ -839,22 +868,53 @@ app.post('/api/music/player/:guildId/playlist', async (req, res) => {
       }
 
       if (joinedAny) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1200));
       }
 
-      const massPromises = userBots.map(async (ub) => {
+      const firstTrack = tracks[0];
+      const restTracks = tracks.slice(1);
+
+      // Pre-buffer first track paused for all bots and give them identical queues
+      await Promise.allSettled(userBots.map(async (ub) => {
         const bot = botManager.bots.get(ub.id);
         const userId = bot?.client?.user?.id || null;
-        return lavalink.addPlaylist(req.params.guildId, tracks, {
+        const player = lavalink.createPlayer(req.params.guildId, {
+          accountId: ub.id,
+          channelId,
+          userId,
+          ownerId
+        });
+        player.queue = [...restTracks];
+        player.volume = 1000;
+        player.filters.bassboost = true;
+        return lavalink.play(req.params.guildId, firstTrack, {
           accountId: ub.id,
           channelId,
           userId,
           ownerId,
-          noReplace: true
+          noReplace: true,
+          startPaused: true
         });
-      });
+      }));
 
-      await Promise.allSettled(massPromises);
+      await new Promise(r => setTimeout(r, 180));
+
+      // Atomic release barrier
+      await Promise.allSettled(userBots.map(async (ub) => {
+        const bot = botManager.bots.get(ub.id);
+        const userId = bot?.client?.user?.id || null;
+        const player = lavalink.getPlayer(req.params.guildId, ub.id, ownerId);
+        if (player) {
+          player.paused = false;
+          player.playing = true;
+          player.position = 0;
+        }
+        return lavalink.sendPlayerUpdate(req.params.guildId, {
+          paused: false,
+          position: 0
+        }, userId);
+      }));
+
       return res.json({ success: true, count: tracks.length, massPlay: true, botCount: userBots.length });
     }
 
@@ -942,16 +1002,16 @@ app.post('/api/music/player/:guildId/volume', async (req, res) => {
   try {
     const { volume, accountId } = req.body;
     const ownerId = req.user.userId;
-    if (accountId === 'ALL_BOTS' || !accountId) {
-      for (const p of lavalink.players.values()) {
-        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
-          await lavalink.setVolume(req.params.guildId, parseInt(volume, 10), p.accountId, ownerId);
-        }
-      }
+    const vol = parseInt(volume, 10) || 1000;
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    if (accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true) {
+      await Promise.allSettled(userBots.map(async (ub) => {
+        return lavalink.setVolume(req.params.guildId, vol, ub.id, ownerId);
+      }));
     } else {
-      await lavalink.setVolume(req.params.guildId, parseInt(volume, 10), accountId, ownerId);
+      await lavalink.setVolume(req.params.guildId, vol, accountId, ownerId);
     }
-    res.json({ success: true });
+    res.json({ success: true, volume: vol });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -961,16 +1021,70 @@ app.post('/api/music/player/:guildId/seek', async (req, res) => {
   try {
     const { position, accountId } = req.body;
     const ownerId = req.user.userId;
-    if (accountId === 'ALL_BOTS' || !accountId) {
-      for (const p of lavalink.players.values()) {
-        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
-          await lavalink.seek(req.params.guildId, parseInt(position, 10), p.accountId, ownerId);
-        }
-      }
+    const pos = Math.max(0, parseInt(position, 10) || 0);
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    if (accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true) {
+      await Promise.allSettled(userBots.map(async (ub) => {
+        const bot = botManager.bots.get(ub.id);
+        const userId = bot?.client?.user?.id || null;
+        const player = lavalink.getPlayer(req.params.guildId, ub.id, ownerId);
+        if (player) player.position = pos;
+        return lavalink.sendPlayerUpdate(req.params.guildId, { position: pos }, userId);
+      }));
     } else {
-      await lavalink.seek(req.params.guildId, parseInt(position, 10), accountId, ownerId);
+      await lavalink.seek(req.params.guildId, pos, accountId, ownerId);
     }
-    res.json({ success: true });
+    res.json({ success: true, position: pos });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/music/player/:guildId/sync', async (req, res) => {
+  try {
+    const ownerId = req.user.userId;
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    if (userBots.length === 0) return res.status(400).json({ success: false, error: 'No online bots' });
+
+    let leadPlayer = null;
+    for (const ub of userBots) {
+      const p = lavalink.getPlayer(req.params.guildId, ub.id, ownerId);
+      if (p && p.currentTrack && p.playing) {
+        leadPlayer = p;
+        break;
+      }
+    }
+
+    if (!leadPlayer || !leadPlayer.currentTrack) {
+      return res.status(400).json({ success: false, error: 'No bot is currently playing a track to sync from' });
+    }
+
+    const track = leadPlayer.currentTrack;
+    const pos = Math.max(0, leadPlayer.position || 0);
+    const filtersPayload = lavalink.buildFiltersPayload(leadPlayer);
+
+    // Atomically snap all bots to exact same track, position, volume, and EQ
+    await Promise.allSettled(userBots.map(async (ub) => {
+      const bot = botManager.bots.get(ub.id);
+      const userId = bot?.client?.user?.id || null;
+      const p = lavalink.getPlayer(req.params.guildId, ub.id, ownerId);
+      if (p) {
+        p.currentTrack = track;
+        p.position = pos;
+        p.playing = true;
+        p.paused = false;
+        p.volume = leadPlayer.volume;
+      }
+      return lavalink.sendPlayerUpdate(req.params.guildId, {
+        track: { encoded: track.encoded },
+        position: pos,
+        paused: false,
+        volume: Math.min(1000, leadPlayer.volume),
+        filters: filtersPayload
+      }, userId);
+    }));
+
+    res.json({ success: true, syncedBots: userBots.length, position: pos, track: track.info?.title });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -979,11 +1093,10 @@ app.post('/api/music/player/:guildId/seek', async (req, res) => {
 app.post('/api/music/player/:guildId/loop', (req, res) => {
   const { mode, accountId } = req.body; // 'off', 'track', 'queue'
   const ownerId = req.user.userId;
+  const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
   if (accountId === 'ALL_BOTS' || !accountId) {
-    for (const p of lavalink.players.values()) {
-      if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
-        lavalink.setLoop(req.params.guildId, mode, p.accountId, ownerId);
-      }
+    for (const ub of userBots) {
+      lavalink.setLoop(req.params.guildId, mode, ub.id, ownerId);
     }
   } else {
     lavalink.setLoop(req.params.guildId, mode, accountId, ownerId);
@@ -995,12 +1108,11 @@ app.post('/api/music/player/:guildId/filter', async (req, res) => {
   try {
     const { filterName, enabled, accountId } = req.body;
     const ownerId = req.user.userId;
-    if (accountId === 'ALL_BOTS' || !accountId) {
-      for (const p of lavalink.players.values()) {
-        if (p.guildId === req.params.guildId && p.ownerId === ownerId) {
-          await lavalink.applyFilters(req.params.guildId, filterName, !!enabled, p.accountId, ownerId);
-        }
-      }
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+    if (accountId === 'ALL_BOTS' || !accountId || req.body.allBots === true) {
+      await Promise.allSettled(userBots.map(async (ub) => {
+        return lavalink.applyFilters(req.params.guildId, filterName, !!enabled, ub.id, ownerId);
+      }));
     } else {
       await lavalink.applyFilters(req.params.guildId, filterName, !!enabled, accountId, ownerId);
     }
