@@ -362,26 +362,57 @@ class BotManager extends EventEmitter {
     }
 
     const client = botEntry.client;
-    
-    // Find channel in cache or fetch
-    let channel;
-    try {
-      channel = await client.channels.fetch(channelId);
-    } catch (err) {
-      throw new Error(`Failed to fetch voice channel: ${err.message}`);
+
+    // Clear any previous reconnect timeout so it doesn't pull bot back to old server
+    if (botEntry.reconnectTimeout) {
+      clearTimeout(botEntry.reconnectTimeout);
+      botEntry.reconnectTimeout = null;
     }
 
-    if (!channel || !channel.isVoice()) {
-      throw new Error("Specified channel is not a valid voice channel");
+    // 1. Resolve channel from cache first (instant, 0ms latency)
+    let channel = client.channels.cache.get(channelId);
+    let guildId = options.guildId || channel?.guild?.id;
+    let channelName = channel?.name || channelId;
+    let guildName = channel?.guild?.name || "Discord Server";
+
+    // 2. If not in cache, try fast fetch with 2.5s timeout
+    if (!channel) {
+      try {
+        channel = await Promise.race([
+          client.channels.fetch(channelId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 2500))
+        ]);
+        if (channel) {
+          guildId = guildId || channel.guild?.id;
+          channelName = channel.name || channelName;
+          guildName = channel.guild?.name || guildName;
+        }
+      } catch (e) {}
     }
 
-    const guildId = channel.guild.id;
+    // 3. Fallback guild discovery: search all guilds this bot is in
+    if (!guildId) {
+      for (const g of client.guilds.cache.values()) {
+        if (g.channels.cache.has(channelId)) {
+          guildId = g.id;
+          channel = g.channels.cache.get(channelId);
+          guildName = g.name;
+          channelName = channel?.name || channelName;
+          break;
+        }
+      }
+    }
+
+    if (!guildId) {
+      throw new Error(`Bot is not a member of the server for channel ${channelId}`);
+    }
+
     const selfMute = options.selfMute ?? false;
     const selfDeaf = options.selfDeaf ?? false;
 
-    logger.voice("VOICE", `Account [${botEntry.account.label}] joining "${channel.name}" in "${channel.guild.name}"...`);
+    logger.voice("VOICE", `Account [${botEntry.account.label}] joining "${channelName}" in "${guildName}" (${guildId})...`);
 
-    // Broadcast op 4 to Discord Gateway
+    // Broadcast op 4 to Discord Gateway immediately
     const shard = client.ws.shards.first();
     if (!shard) {
       throw new Error("No active gateway shard available");
@@ -391,7 +422,7 @@ class BotManager extends EventEmitter {
       op: 4,
       d: {
         guild_id: guildId,
-        channel_id: channel.id,
+        channel_id: channelId,
         self_mute: selfMute,
         self_deaf: selfDeaf,
         self_video: false
@@ -400,19 +431,21 @@ class BotManager extends EventEmitter {
 
     botEntry.currentVoice = {
       guildId,
-      guildName: channel.guild.name,
-      channelId: channel.id,
-      channelName: channel.name,
+      guildName,
+      channelId,
+      channelName,
       selfMute,
       selfDeaf
     };
 
     // Update Lavalink player association if player exists or created
-    botEntry.rawVoiceData.channelId = channel.id;
+    botEntry.rawVoiceData.channelId = channelId;
+    botEntry.rawVoiceData.guildId = guildId;
+
     this.lavalink.createPlayer(guildId, {
       accountId,
       userId: client.user.id,
-      channelId: channel.id,
+      channelId,
       ownerId: botEntry.account?.ownerId || null
     });
 
@@ -506,26 +539,51 @@ class BotManager extends EventEmitter {
     let channelName = "";
     let guildName = "";
 
-    // Resolve channel & guild info from any online bot
+    // Fast cache discovery from any online bot
     for (const [id, botEntry] of this.bots) {
       if (botEntry.client && botEntry.status === "online") {
-        try {
-          const ch = await botEntry.client.channels.fetch(channelId);
+        const cached = botEntry.client.channels.cache.get(channelId);
+        if (cached) {
+          channelName = cached.name || channelName;
+          guildName = cached.guild?.name || guildName;
+          detectedGuildId = detectedGuildId || cached.guild?.id;
+          break;
+        }
+        for (const guild of botEntry.client.guilds.cache.values()) {
+          const ch = guild.channels.cache.get(channelId);
           if (ch) {
-            channelName = ch.name;
-            guildName = ch.guild.name;
-            detectedGuildId = ch.guild.id;
+            channelName = ch.name || channelName;
+            guildName = guild.name || guildName;
+            detectedGuildId = detectedGuildId || guild.id;
             break;
           }
-        } catch (e) {}
+        }
+        if (detectedGuildId) break;
       }
     }
 
-    let joinedCount = 0;
-    const errors = [];
+    // Single-attempt fast fetch if still not detected
+    if (!detectedGuildId) {
+      for (const [id, botEntry] of this.bots) {
+        if (botEntry.client && botEntry.status === "online") {
+          try {
+            const fetched = await Promise.race([
+              botEntry.client.channels.fetch(channelId),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+            ]);
+            if (fetched) {
+              channelName = fetched.name || channelName;
+              guildName = fetched.guild?.name || guildName;
+              detectedGuildId = fetched.guild?.id || detectedGuildId;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    }
 
+    // Immediately update database 24/7 settings so bots never reconnect to old servers
     for (const acc of accounts) {
-      // 1. Update 24/7 setting in database
       const voice247Config = {
         enabled: !!keep247,
         guildId: detectedGuildId || "",
@@ -536,8 +594,13 @@ class BotManager extends EventEmitter {
         selfDeaf: !!selfDeaf
       };
       database.updateAccount(acc.id, { voice247: voice247Config });
+    }
 
-      // 2. If bot is online, join the channel
+    let joinedCount = 0;
+    const errors = [];
+
+    // Parallel join execution for instant lockstep entry
+    await Promise.allSettled(accounts.map(async (acc) => {
       const botEntry = this.bots.get(acc.id);
       if (botEntry && botEntry.status === "online") {
         try {
@@ -548,10 +611,10 @@ class BotManager extends EventEmitter {
           });
           joinedCount++;
         } catch (err) {
-          errors.push(`${acc.label}: ${err.message}`);
+          errors.push(`${acc.label || acc.id}: ${err.message}`);
         }
       }
-    }
+    }));
 
     logger.voice("24/7", `Mass voice join executed: ${joinedCount}/${accounts.length} bots joined ${channelName || channelId} (24/7: ${keep247 ? 'ACTIVE' : 'OFF'})`);
     this.emit("accountsUpdated", { accounts: this.getAllBotsStatus(userId) });

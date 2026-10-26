@@ -25,13 +25,16 @@ class LavalinkSession extends EventEmitter {
     try {
       logger.info('LAVALINK', `Opening session for User ${this.userId} (${this.client.wsUrl})...`);
 
-      this.ws = new WebSocket(this.client.wsUrl, {
-        headers: {
-          'Authorization': this.client.auth,
-          'User-Id': String(this.userId),
-          'Client-Name': 'Selfbot-Dashboard/2.0'
-        }
-      });
+      const headers = {
+        'Authorization': this.client.auth,
+        'User-Id': String(this.userId),
+        'Client-Name': 'Selfbot-Dashboard/2.0'
+      };
+      if (this.sessionId) {
+        headers['Session-Id'] = this.sessionId;
+      }
+
+      this.ws = new WebSocket(this.client.wsUrl, { headers });
 
       this.ws.onopen = () => {
         logger.success('LAVALINK', `WebSocket connected for User ${this.userId}`);
@@ -52,7 +55,6 @@ class LavalinkSession extends EventEmitter {
 
       this.ws.onclose = (event) => {
         this.connected = false;
-        this.sessionId = null;
         logger.warn('LAVALINK', `Session closed for User ${this.userId} (code: ${event.code}). Retrying in 5s...`);
         this.emit('disconnect');
         this.scheduleReconnect();
@@ -78,6 +80,13 @@ class LavalinkSession extends EventEmitter {
         this.sessionId = msg.sessionId;
         this.connected = true;
         logger.success('LAVALINK', `Session ready for User ${this.userId}! SessionId: ${msg.sessionId}`);
+        // Enable Lavalink session resuming so tracks never stop during temporary network disconnects
+        this.client.apiRequest(`/v4/sessions/${this.sessionId}`, 'PATCH', {
+          resuming: true,
+          timeout: 180
+        }).catch(err => {
+          logger.warn('LAVALINK', `Failed to enable session resuming for User ${this.userId}: ${err.message}`);
+        });
         this.emit('ready', { sessionId: this.sessionId, userId: this.userId });
         break;
 
@@ -96,6 +105,9 @@ class LavalinkSession extends EventEmitter {
         if (msg.guildId) {
           const player = this.client.getPlayer(msg.guildId, this.userId);
           if (player && msg.state) {
+            if (msg.state.position > (player.position || 0)) {
+              player._stuckAttempts = 0;
+            }
             player.position = msg.state.position || 0;
             player.ping = msg.state.ping || 0;
             player.connected = msg.state.connected ?? true;
@@ -112,6 +124,8 @@ class LavalinkSession extends EventEmitter {
 
   destroy() {
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+    this.sessionId = null;
+    this.connected = false;
     if (this.ws) {
       try { this.ws.close(); } catch (e) {}
     }
@@ -217,21 +231,46 @@ class LavalinkClient extends EventEmitter {
       case 'TrackStartEvent':
         player.playing = true;
         player.paused = false;
+        player._stuckAttempts = 0;
+        player._exceptionAttempts = 0;
         this.emit('trackStart', { player, track: event.track, ownerId: player.ownerId, accountId: player.accountId });
         break;
 
       case 'TrackEndEvent':
+        player._stuckAttempts = 0;
+        player._exceptionAttempts = 0;
         this.handleTrackEnd(player, event);
         break;
 
       case 'TrackExceptionEvent':
         logger.error('MUSIC', `Track exception: ${event.exception?.message || 'Unknown'}`);
-        this.playNext(player);
+        player._exceptionAttempts = (player._exceptionAttempts || 0) + 1;
+        if (player._exceptionAttempts <= 1 && player.currentTrack) {
+          logger.warn('MUSIC', `Attempting stream recovery after track exception [bot: ${player.accountId || sessionUserId}]...`);
+          const resumePos = Math.max(0, player.position || 0);
+          this.sendPlayerUpdate(guildId, {
+            position: resumePos,
+            paused: false
+          }, player.userId).catch(() => {});
+        } else {
+          player._exceptionAttempts = 0;
+          this.playNext(player);
+        }
         break;
 
       case 'TrackStuckEvent':
-        logger.warn('MUSIC', `Track stuck at ${event.thresholdMs}ms, skipping...`);
-        this.playNext(player);
+        logger.warn('MUSIC', `Track stuck at ${event.thresholdMs}ms for guild ${guildId} [bot: ${player.accountId || sessionUserId}]. Attempting non-destructive buffer recovery...`);
+        player._stuckAttempts = (player._stuckAttempts || 0) + 1;
+        if (player._stuckAttempts <= 2 && player.currentTrack) {
+          const resumePos = Math.max(0, player.position || 0);
+          this.sendPlayerUpdate(guildId, {
+            position: resumePos,
+            paused: false
+          }, player.userId).catch(() => {});
+        } else {
+          player._stuckAttempts = 0;
+          this.playNext(player);
+        }
         break;
 
       case 'WebSocketClosedEvent':

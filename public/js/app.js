@@ -1908,9 +1908,13 @@ async function executeMassJoinVoice() {
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting All Bots...';
 
   try {
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || state.token || '';
     const res = await fetch('/api/accounts/voice/join-all', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         channelId,
         guildId: document.getElementById('mass-guild-select')?.value || null,
@@ -1944,9 +1948,13 @@ async function executeMassLeaveVoice() {
   btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Leaving...';
 
   try {
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || state.token || '';
     const res = await fetch('/api/accounts/voice/leave-all', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ disable247: true })
     });
 
