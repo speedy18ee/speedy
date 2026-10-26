@@ -7,19 +7,8 @@ const database = require("./database");
 const logger = require("./logger");
 const config = require("./config");
 
-// Verified fast & working proxy pool for multi-bot Discord Gateway connections (Webshare 10 Proxies)
-const WORKING_PROXIES = [
-  'http://nzpqvgqf:9e8j1sjfnbyh@198.23.243.226:6361',
-  'http://nzpqvgqf:9e8j1sjfnbyh@84.247.60.125:6095',
-  'http://nzpqvgqf:9e8j1sjfnbyh@191.96.254.138:6185',
-  'http://nzpqvgqf:9e8j1sjfnbyh@104.164.49.38:7693',
-  'http://nzpqvgqf:9e8j1sjfnbyh@23.26.71.145:5628',
-  'http://nzpqvgqf:9e8j1sjfnbyh@198.46.161.42:5092',
-  'http://nzpqvgqf:9e8j1sjfnbyh@64.137.10.153:5803',
-  'http://nzpqvgqf:9e8j1sjfnbyh@38.154.185.97:6370',
-  'http://nzpqvgqf:9e8j1sjfnbyh@64.137.96.74:6641',
-  'http://nzpqvgqf:9e8j1sjfnbyh@45.38.107.97:6014'
-];
+// Optional proxy pool (Direct connection enabled by default without proxy limits)
+const WORKING_PROXIES = [];
 
 class BotManager extends EventEmitter {
   constructor(lavalinkClient) {
@@ -43,28 +32,24 @@ class BotManager extends EventEmitter {
     const isOldDeadProxy = (p) => p && p.includes('pldkrffl');
     const candidateProxies = [];
 
+    // 1. Account custom proxy (if provided by user)
     if (acc.proxy && acc.proxy.trim() && !isOldDeadProxy(acc.proxy)) {
       candidateProxies.push(acc.proxy.trim());
     }
+    // 2. Settings proxy (if configured in panel)
     if (settings.proxy && settings.proxy.trim() && !candidateProxies.includes(settings.proxy.trim()) && !isOldDeadProxy(settings.proxy)) {
       candidateProxies.push(settings.proxy.trim());
     }
+    // 3. Environment proxy
     if (process.env.DISCORD_PROXY && process.env.DISCORD_PROXY.trim() && !candidateProxies.includes(process.env.DISCORD_PROXY.trim()) && !isOldDeadProxy(process.env.DISCORD_PROXY)) {
       candidateProxies.push(process.env.DISCORD_PROXY.trim());
     }
 
-    // Rotate 10 Webshare proxies so each bot gets its own unique primary IP address
-    let hash = 0;
-    for (let c = 0; c < accountId.length; c++) hash = (hash + accountId.charCodeAt(c)) % WORKING_PROXIES.length;
-    const rotatedPool = [
-      ...WORKING_PROXIES.slice(hash),
-      ...WORKING_PROXIES.slice(0, hash)
-    ];
-
-    for (const p of rotatedPool) {
-      if (!candidateProxies.includes(p)) candidateProxies.push(p);
+    // 4. Direct Connection (Always supported, fastest, zero bandwidth limit)
+    // If no custom proxy is provided, Direct is primary. If custom proxy fails, Direct is fallback.
+    if (!candidateProxies.includes(null)) {
+      candidateProxies.push(null);
     }
-    if (candidateProxies.length === 0) candidateProxies.push(null);
 
     let lastError = null;
 
