@@ -29,26 +29,16 @@ class BotManager extends EventEmitter {
     }
 
     const settings = database.getSettings();
-    const isOldDeadProxy = (p) => p && p.includes('pldkrffl');
+    const isOldDeadProxy = (p) => !p || p.includes('pldkrffl') || p.includes('198.23.243.226') || p.includes('45.38.107.97') || p.includes('nzpqvgqf');
     const candidateProxies = [];
 
-    // 1. Account custom proxy (if provided by user)
+    // DIRECT CONNECTION IS ALWAYS FIRST AND DEFAULT
+    // (Zero bandwidth limit, instant connection, no 402 payment required errors)
+    candidateProxies.push(null);
+
+    // Only if the user explicitly configured a custom proxy for this account that is not dead
     if (acc.proxy && acc.proxy.trim() && !isOldDeadProxy(acc.proxy)) {
       candidateProxies.push(acc.proxy.trim());
-    }
-    // 2. Settings proxy (if configured in panel)
-    if (settings.proxy && settings.proxy.trim() && !candidateProxies.includes(settings.proxy.trim()) && !isOldDeadProxy(settings.proxy)) {
-      candidateProxies.push(settings.proxy.trim());
-    }
-    // 3. Environment proxy
-    if (process.env.DISCORD_PROXY && process.env.DISCORD_PROXY.trim() && !candidateProxies.includes(process.env.DISCORD_PROXY.trim()) && !isOldDeadProxy(process.env.DISCORD_PROXY)) {
-      candidateProxies.push(process.env.DISCORD_PROXY.trim());
-    }
-
-    // 4. Direct Connection (Always supported, fastest, zero bandwidth limit)
-    // If no custom proxy is provided, Direct is primary. If custom proxy fails, Direct is fallback.
-    if (!candidateProxies.includes(null)) {
-      candidateProxies.push(null);
     }
 
     let lastError = null;
@@ -254,6 +244,16 @@ class BotManager extends EventEmitter {
 
     client.on("shardError", (err) => {
       logger.error("BOT", `[${acc.label}] Shard Error: ${err.message}`);
+      if (err.message && (err.message.includes("402") || err.message.includes("Unexpected server response") || err.message.includes("proxy") || err.message.includes("ECONNRESET") || err.message.includes("ETIMEDOUT"))) {
+        logger.warn("BOT", `[${acc.label}] Shard proxy failure detected (${err.message}). Auto-switching to Direct Connection in 2s...`);
+        try { client.destroy(); } catch (_) {}
+        setTimeout(() => {
+          this._startWithProxy(accountId, acc, null).catch(e => {
+            logger.error("BOT", `[${acc.label}] Direct reconnect failed: ${e.message}`);
+          });
+        }, 2000);
+        return;
+      }
       botEntry.status = "error";
       botEntry.error = err.message;
       this.emit("botStatus", { accountId, status: "error", error: err.message });
@@ -263,6 +263,16 @@ class BotManager extends EventEmitter {
       const code = event?.code || "unknown";
       const reason = event?.reason || "none";
       logger.warn("BOT", `[${acc.label}] Shard Disconnected (code: ${code}, reason: ${reason})`);
+      if (code !== 4004 && code !== 4014) {
+        // Auto-reconnect via direct connection so bots never stay offline
+        setTimeout(() => {
+          const current = this.bots.get(accountId);
+          if (!current || current.status !== "online") {
+            logger.info("BOT", `[${acc.label}] Auto-reconnecting shard via Direct Connection...`);
+            this._startWithProxy(accountId, acc, null).catch(() => {});
+          }
+        }, 3000);
+      }
       botEntry.status = "offline";
       this.emit("botStatus", { accountId, status: "offline", error: `Code ${code}` });
     });
@@ -290,12 +300,35 @@ class BotManager extends EventEmitter {
       throw new Error("Token is empty or invalid format");
     }
 
-    // Login with account token with 20s timeout
+    // Login with account token and ensure gateway connection succeeds
     try {
-      await Promise.race([
-        client.login(cleanToken),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 20s (retrying with next proxy...)")), 20000))
-      ]);
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const onReady = () => {
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        };
+        const onError = (err) => {
+          if (!settled) {
+            settled = true;
+            reject(err);
+          }
+        };
+        client.once('ready', onReady);
+        client.once('shardError', onError);
+
+        client.login(cleanToken).catch(onError);
+
+        setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            if (client.ws?.status === 0) resolve();
+            else reject(new Error("Gateway connection handshake timed out"));
+          }
+        }, 15000);
+      });
     } catch (err) {
       try { client.destroy(); } catch (_) {}
       throw err;
