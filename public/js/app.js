@@ -490,9 +490,16 @@ function createAccountCard(acc) {
       <span class="voice-text">${voiceInfo}</span>
     </div>
 
-    <div class="detail-row" style="margin-bottom:12px;">
-      <span class="label">Token:</span>
-      <span class="val font-mono" style="font-size:0.75rem;">${acc.tokenMasked || '••••••••'}</span>
+    <div class="detail-row" style="margin-bottom:12px; display: flex; flex-direction: column; gap: 4px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="label" style="font-size:0.75rem; color:#a1a1aa;"><i class="fa-solid fa-key"></i> Token:</span>
+        <button class="btn btn-sm btn-outline" style="padding: 2px 8px; font-size: 0.7rem; border-color: #3f3f46;" type="button" title="Copy Full Token" onclick="navigator.clipboard.writeText('${acc.token || acc.tokenMasked}'); showToast('Full token copied to clipboard!', 'success');">
+          <i class="fa-solid fa-copy"></i> Copy Token
+        </button>
+      </div>
+      <div class="val font-mono" style="font-size:0.75rem; word-break: break-all; background: #09090b; padding: 6px 8px; border-radius: 6px; border: 1px solid #27272a; color: #38bdf8; user-select: all; line-height: 1.3;" title="Full Discord Token (click to select)">
+        ${escapeHTML(acc.token || acc.tokenMasked || '')}
+      </div>
     </div>
 
     <div class="acc-card-actions">

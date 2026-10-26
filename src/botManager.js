@@ -217,9 +217,12 @@ class BotManager extends EventEmitter {
           
           if (channel_id) {
             botEntry.rawVoiceData.channelId = channel_id;
+            const ch = client.channels.cache.get(channel_id);
             botEntry.currentVoice = {
               guildId: guild_id,
-              channelId: channel_id
+              guildName: ch?.guild?.name || botEntry.currentVoice?.guildName || "Discord Server",
+              channelId: channel_id,
+              channelName: ch?.name || botEntry.currentVoice?.channelName || channel_id
             };
             
             await tryDispatchLavalinkVoice(guild_id);
@@ -793,7 +796,8 @@ class BotManager extends EventEmitter {
         id: acc.id,
         ownerId: acc.ownerId,
         label: acc.label,
-        tokenMasked: acc.token ? `${acc.token.substring(0, 12)}...${acc.token.substring(acc.token.length - 6)}` : "",
+        token: acc.token || "",
+        tokenMasked: acc.token || "",
         autoStart: acc.autoStart,
         status: live ? live.status : "offline",
         error: live?.error || null,
