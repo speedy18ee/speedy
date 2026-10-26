@@ -23,9 +23,12 @@ class BotManager extends EventEmitter {
     const acc = database.getAccount(accountId);
     if (!acc) throw new Error("Account not found");
 
-    if (this.bots.has(accountId) && this.bots.get(accountId).status === "online") {
-      logger.warn("BOT", `Account ${acc.label} (${accountId}) is already running.`);
-      return;
+    if (this.bots.has(accountId)) {
+      const existing = this.bots.get(accountId);
+      if (existing.status === "online" || existing.status === "connecting") {
+        logger.warn("BOT", `Account ${acc.label} (${accountId}) is already ${existing.status}. Skipping duplicate connection.`);
+        return;
+      }
     }
 
     const settings = database.getSettings();
@@ -77,8 +80,19 @@ class BotManager extends EventEmitter {
   async _startWithProxy(accountId, acc, proxy) {
     const clientOptions = {
       checkUpdate: false,
-      restRequestTimeout: 40000,
-      syncStatus: false
+      restRequestTimeout: 45000,
+      syncStatus: false,
+      ws: {
+        properties: {
+          os: 'Windows',
+          browser: 'Discord Client',
+          release_channel: 'stable',
+          client_version: '1.0.9155',
+          os_version: '10.0.19045',
+          os_arch: 'x64',
+          system_locale: 'en-US'
+        }
+      }
     };
 
     if (proxy && typeof proxy === 'string' && proxy.trim()) {
@@ -370,8 +384,8 @@ class BotManager extends EventEmitter {
         this.startAccount(acc.id).catch(err => {
           logger.error("BOT", `Failed to start account ${acc.label}: ${err.message}`);
         });
-        // 1-second stagger between bot launches for smooth connection
-        await new Promise(r => setTimeout(r, 1000));
+        // 3.5-second stagger between bot launches to prevent Discord anti-fraud rate limits & token resets
+        await new Promise(r => setTimeout(r, 3500));
       }
     }
   }
