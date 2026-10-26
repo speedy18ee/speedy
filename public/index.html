@@ -596,6 +596,22 @@
               </div>
             </div>
           </div>
+
+          <!-- SAVED MP3 SONGS LIBRARY -->
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #1c1c24;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-folder-music" style="color: #a855f7;"></i>
+                <h3 style="font-size: 0.95rem; font-weight: 700; color: #ffffff; margin: 0;">Saved MP3 Songs Library</h3>
+              </div>
+              <button class="btn btn-outline btn-sm" type="button" onclick="if(window.customAudioStudio) window.customAudioStudio.loadSavedSongs();" title="Refresh library" style="padding: 4px 10px; font-size: 0.75rem;">
+                <i class="fa-solid fa-rotate"></i> Refresh
+              </button>
+            </div>
+            <div id="saved-mp3-list" style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="color: #71717a; font-size: 0.85rem; text-align: center; padding: 16px;">Loading saved songs...</div>
+            </div>
+          </div>
         </div>
       </section>
 

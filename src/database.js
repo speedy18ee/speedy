@@ -202,6 +202,37 @@ class Database {
     }
     return count;
   }
+
+  // --- Uploaded MP3 Songs methods ---
+  getUploadedSongs(userId = null) {
+    if (!this.uploadedSongs) {
+      this.uploadedSongs = this.loadJSON(config.uploadsFile, []);
+    }
+    if (!userId) return this.uploadedSongs;
+    return this.uploadedSongs.filter(s => s.ownerId === userId);
+  }
+
+  saveUploadedSong(song) {
+    if (!this.uploadedSongs) {
+      this.uploadedSongs = this.loadJSON(config.uploadsFile, []);
+    }
+    this.uploadedSongs.unshift(song);
+    this.saveJSON(config.uploadsFile, this.uploadedSongs, false);
+    return song;
+  }
+
+  deleteUploadedSong(id, userId = null) {
+    if (!this.uploadedSongs) {
+      this.uploadedSongs = this.loadJSON(config.uploadsFile, []);
+    }
+    const idx = this.uploadedSongs.findIndex(s => s.id === id && (!userId || s.ownerId === userId));
+    if (idx !== -1) {
+      const removed = this.uploadedSongs.splice(idx, 1)[0];
+      this.saveJSON(config.uploadsFile, this.uploadedSongs, false);
+      return removed;
+    }
+    return null;
+  }
 }
 
 module.exports = new Database();

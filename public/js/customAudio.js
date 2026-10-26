@@ -107,6 +107,9 @@ class CustomAudioStudio {
     if (btnUrlQueue) {
       btnUrlQueue.addEventListener('click', () => this.submitAudio('url', 'queue'));
     }
+
+    // Load saved MP3 library
+    setTimeout(() => this.loadSavedSongs(), 300);
   }
 
   switchTab(tabName) {
@@ -523,6 +526,9 @@ class CustomAudioStudio {
         }
       }
 
+      // Refresh Saved Songs Library
+      this.loadSavedSongs();
+
       // Switch to Music Tab so user sees player immediately
       if (typeof window.switchTab === 'function') {
         window.switchTab('music');
@@ -549,6 +555,82 @@ class CustomAudioStudio {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  }
+  async loadSavedSongs() {
+    const listElem = document.getElementById('saved-mp3-list');
+    if (!listElem) return;
+
+    try {
+      const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+      const res = await fetch('/api/music/uploads', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!data.success || !data.songs || data.songs.length === 0) {
+        listElem.innerHTML = '<div style="color: #71717a; font-size: 0.85rem; text-align: center; padding: 16px; background: #0c0c10; border-radius: 8px;">No saved MP3 songs yet. Upload any MP3 song above to automatically save and keep it here!</div>';
+        return;
+      }
+
+      listElem.innerHTML = data.songs.map(song => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #0c0c10; border: 1px solid #1c1c24; border-radius: 8px; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+            <i class="fa-solid fa-file-audio" style="color: #a855f7; font-size: 1.1rem; flex-shrink: 0;"></i>
+            <div style="min-width: 0;">
+              <div style="color: #ffffff; font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${song.title}</div>
+              <div style="color: #71717a; font-size: 0.75rem;">${song.sizeFormatted || ''} • ${new Date(song.uploadedAt).toLocaleDateString()}</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px; flex-shrink: 0;">
+            <button class="btn btn-primary btn-sm" onclick="window.customAudioStudio.playSavedSong('${song.id}')" title="Play Now on All Bots" style="padding: 6px 12px; font-size: 0.8rem;">
+              <i class="fa-solid fa-play"></i> Play
+            </button>
+            <button class="btn btn-outline btn-danger-outline btn-sm" onclick="window.customAudioStudio.deleteSavedSong('${song.id}')" title="Delete Song" style="padding: 6px 10px; font-size: 0.8rem;">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      listElem.innerHTML = `<div style="color: #ef4444; font-size: 0.8rem; text-align: center; padding: 12px;">Failed to load saved songs: ${err.message}</div>`;
+    }
+  }
+
+  async playSavedSong(songId) {
+    if (window.showToast) showToast('🚀 Streaming saved MP3 to all bots at 1000% volume...', 'info');
+    try {
+      const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+      const res = await fetch(`/api/music/uploads/${songId}/play`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ mode: 'playNow' })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to play song');
+      if (window.showToast) showToast(`🔥 Playing "${data.track.info.title}" on ALL bots with 1000% volume!`, 'success');
+      if (typeof window.switchTab === 'function') window.switchTab('music');
+    } catch (err) {
+      if (window.showToast) showToast(`Playback error: ${err.message}`, 'error');
+    }
+  }
+
+  async deleteSavedSong(songId) {
+    if (!confirm('Are you sure you want to delete this saved MP3 song?')) return;
+    try {
+      const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+      const res = await fetch(`/api/music/uploads/${songId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete song');
+      if (window.showToast) showToast('Song removed from saved library.', 'success');
+      this.loadSavedSongs();
+    } catch (err) {
+      if (window.showToast) showToast(`Delete error: ${err.message}`, 'error');
+    }
   }
 }
 

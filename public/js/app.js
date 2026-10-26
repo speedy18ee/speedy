@@ -345,6 +345,9 @@ function switchTab(tabId) {
 
   if (tabId === 'music') {
     populateMusicBotSelect();
+    if (window.customAudioStudio) {
+      window.customAudioStudio.loadSavedSongs();
+    }
   }
 }
 window.switchTab = switchTab;

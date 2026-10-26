@@ -513,61 +513,80 @@ app.get('/api/music/search', async (req, res) => {
 app.post('/api/music/custom-audio', async (req, res) => {
   try {
     const { audioBase64, audioUrl: rawAudioUrl, filename, title, mode, accountId, guildId, channelId } = req.body;
-    
-    // Find target bot
+    const ownerId = req.user.userId;
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+
+    // 1. Resolve target guild and voice channel automatically
+    let targetGuildId = guildId;
+    let targetChannelId = channelId;
     let targetBot = null;
-    if (accountId) {
+
+    if (accountId && accountId !== 'ALL_BOTS') {
       targetBot = botManager.bots.get(accountId);
-    } else {
-      // Find first online bot belonging to this user
-      const userBots = botManager.getAllBotsStatus(req.user?.userId);
-      for (const ub of userBots) {
-        if (ub.status === 'online') {
-          targetBot = botManager.bots.get(ub.id);
-          if (targetBot?.currentVoice?.guildId) break;
-        }
+      if (targetBot?.currentVoice?.guildId) {
+        targetGuildId = targetGuildId || targetBot.currentVoice.guildId;
+        targetChannelId = targetChannelId || targetBot.currentVoice.channelId;
       }
-      if (!targetBot) {
-        for (const [id, bot] of botManager.bots.entries()) {
-          if (bot.account?.ownerId === req.user?.userId && bot.status === 'online') {
-            targetBot = bot;
-            if (bot.currentVoice?.guildId) break;
-          }
+    }
+
+    // Auto-detect from currently connected voice bots
+    if (!targetGuildId || !targetChannelId) {
+      for (const ub of userBots) {
+        const liveBot = botManager.bots.get(ub.id);
+        if (liveBot?.currentVoice?.guildId && liveBot?.currentVoice?.channelId) {
+          targetGuildId = targetGuildId || liveBot.currentVoice.guildId;
+          targetChannelId = targetChannelId || liveBot.currentVoice.channelId;
+          targetBot = targetBot || liveBot;
+          break;
         }
       }
     }
 
-    let targetGuildId = guildId || targetBot?.currentVoice?.guildId;
-    let targetChannelId = channelId || targetBot?.currentVoice?.channelId;
+    // Fallback: Auto-detect from 24/7 configuration in database
+    if (!targetGuildId || !targetChannelId) {
+      const accounts = database.getAccounts(ownerId);
+      for (const acc of accounts) {
+        if (acc.voice247 && acc.voice247.guildId && acc.voice247.channelId) {
+          targetGuildId = targetGuildId || acc.voice247.guildId;
+          targetChannelId = targetChannelId || acc.voice247.channelId;
+          break;
+        }
+      }
+    }
 
-    if (!targetGuildId) {
+    if (!targetGuildId || !targetChannelId) {
       return res.status(400).json({
         success: false,
-        error: 'No voice channel found. Please choose a bot and connect it to a voice channel first.'
+        error: 'No target voice channel found. Please connect your bots to a voice channel or enable 24/7 on a channel first.'
       });
     }
 
     let finalAudioUrl = rawAudioUrl;
+    let savedSong = null;
 
+    // 2. Handle uploaded MP3 or recorded audio
     if (!finalAudioUrl && audioBase64) {
       const audioBuffer = Buffer.from(audioBase64, 'base64');
-      const isMp3 = filename?.toLowerCase().endsWith('.mp3');
+      const isMp3 = !filename || filename.toLowerCase().endsWith('.mp3');
       const ext = isMp3 ? '.mp3' : '.wav';
-      const safeFilename = (filename || `audio_${Date.now()}${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_');
-      const localFilePath = path.join(__dirname, 'public', 'uploads', `${Date.now()}_${safeFilename}`);
-      
-      try {
-        fs.writeFileSync(localFilePath, audioBuffer);
-      } catch (fErr) {
-        logger.warn('AUDIO', `Local cache write warning: ${fErr.message}`);
-      }
+      const cleanName = (filename ? path.parse(filename).name : 'audio').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const storedFileName = `${Date.now()}_${cleanName}${ext}`;
+      const localFilePath = path.join(__dirname, 'public', 'uploads', storedFileName);
 
-      // Upload to Catbox
+      fs.writeFileSync(localFilePath, audioBuffer);
+      logger.success('AUDIO', `Saved uploaded audio: ${storedFileName} (${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB)`);
+
+      const host = req.get('host');
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+      const localDirectUrl = `${protocol}://${host}/uploads/${storedFileName}`;
+
+      // Upload to Catbox as CDN mirror
+      let externalUrl = null;
       try {
         const mimeType = isMp3 ? 'audio/mpeg' : 'audio/wav';
         const form = new FormData();
         form.append('reqtype', 'fileupload');
-        form.append('fileToUpload', new Blob([audioBuffer], { type: mimeType }), safeFilename);
+        form.append('fileToUpload', new Blob([audioBuffer], { type: mimeType }), `${cleanName}${ext}`);
         const catRes = await fetch('https://catbox.moe/user/api.php', {
           method: 'POST',
           body: form,
@@ -577,12 +596,30 @@ app.post('/api/music/custom-audio', async (req, res) => {
         });
         const urlText = await catRes.text();
         if (urlText && urlText.trim().startsWith('http')) {
-          finalAudioUrl = urlText.trim();
-          logger.success('AUDIO', `Audio file uploaded to Catbox: ${finalAudioUrl}`);
+          externalUrl = urlText.trim();
+          logger.success('AUDIO', `Audio mirrored to Catbox: ${externalUrl}`);
         }
       } catch (catErr) {
-        logger.warn('AUDIO', `Catbox upload error: ${catErr.message}`);
+        logger.warn('AUDIO', `Catbox mirror warning: ${catErr.message}`);
       }
+
+      finalAudioUrl = externalUrl || localDirectUrl;
+
+      // Save to persistent Uploaded Songs Library
+      savedSong = database.saveUploadedSong({
+        id: 'song_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+        ownerId,
+        ownerUsername: req.user.username,
+        title: title || cleanName.replace(/_/g, ' '),
+        filename: filename || storedFileName,
+        url: finalAudioUrl,
+        mirrorUrl: externalUrl || null,
+        localPath: `/uploads/${storedFileName}`,
+        size: audioBuffer.length,
+        sizeFormatted: `${(audioBuffer.length / (1024 * 1024)).toFixed(2)} MB`,
+        isMp3,
+        uploadedAt: new Date().toISOString()
+      });
     }
 
     if (!finalAudioUrl) {
@@ -592,22 +629,19 @@ app.post('/api/music/custom-audio', async (req, res) => {
       });
     }
 
-    // Auto-join voice channel if not currently in target channel
-    if (targetBot && targetChannelId && targetBot.currentVoice?.channelId !== targetChannelId) {
-      try {
-        await botManager.joinVoice(targetBot.account.id, targetChannelId);
-        await new Promise(r => setTimeout(r, 800));
-      } catch (vErr) {
-        logger.warn('BOT', `Auto-join voice warning: ${vErr.message}`);
+    // 3. Load track via Lavalink
+    let result = await lavalink.loadTracks(finalAudioUrl);
+    if ((!result || !result.tracks || result.tracks.length === 0) && savedSong?.mirrorUrl) {
+      result = await lavalink.loadTracks(savedSong.mirrorUrl);
+      if (result && result.tracks && result.tracks.length > 0) {
+        finalAudioUrl = savedSong.mirrorUrl;
       }
     }
 
-    // Load track via Lavalink
-    const result = await lavalink.loadTracks(finalAudioUrl);
     if (!result || !result.tracks || result.tracks.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Lavalink could not load this audio track. Please ensure the audio is valid MP3 or WAV.'
+        error: 'Lavalink could not decode this audio stream. Please ensure the file is a valid MP3.'
       });
     }
 
@@ -616,18 +650,15 @@ app.post('/api/music/custom-audio', async (req, res) => {
     track.info.title = displayTitle;
     track.info.author = finalAudioUrl.includes('.mp3') ? 'Uploaded MP3' : 'Voice Recording';
 
-    const userId = targetBot?.client?.user?.id || null;
-    const ownerId = req.user.userId;
     const isSingle = req.body.singleBot === true;
     const isMass = !isSingle;
 
     if (isMass) {
-      const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
       if (userBots.length === 0) {
-        return res.status(400).json({ success: false, error: 'No online bots found under your credentials' });
+        return res.status(400).json({ success: false, error: 'No online bots found under your account to play music.' });
       }
 
-      logger.music('MASS_PLAY', `User [${req.user.username}] triggering ALL BOTS (${userBots.length}) audio playback: "${displayTitle}"`);
+      logger.music('MASS_PLAY', `User [${req.user.username}] triggering ALL BOTS (${userBots.length}) audio playback: "${displayTitle}" at 1000% volume with 15dB 60Hz punch`);
 
       // Ensure all online bots join target voice channel
       let joinedAny = false;
@@ -642,10 +673,38 @@ app.post('/api/music/custom-audio', async (req, res) => {
       }
 
       if (joinedAny) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1200));
       }
 
-      const massPromises = userBots.map(async (ub) => {
+      if (mode === 'queue') {
+        userBots.forEach(ub => {
+          const b = botManager.bots.get(ub.id);
+          const p = lavalink.createPlayer(targetGuildId, {
+            accountId: ub.id,
+            channelId: targetChannelId,
+            userId: b?.client?.user?.id || null,
+            ownerId
+          });
+          p.volume = 1000;
+          p.filters.bassboost = true;
+          p.queue.push(track);
+          lavalink.emit('queueUpdate', p);
+          broadcast('playerUpdate', { guildId: targetGuildId, player: p, accountId: ub.id, ownerId }, ownerId);
+        });
+
+        return res.json({
+          success: true,
+          status: 'queued',
+          track,
+          savedSong,
+          url: finalAudioUrl,
+          massPlay: true,
+          botCount: userBots.length
+        });
+      }
+
+      // Pre-buffer track for all bots in PAUSED state at 0:00 with 1000% volume & bassboost
+      await Promise.allSettled(userBots.map(async (ub) => {
         const b = botManager.bots.get(ub.id);
         const bUid = b?.client?.user?.id || null;
         const p = lavalink.createPlayer(targetGuildId, {
@@ -654,64 +713,197 @@ app.post('/api/music/custom-audio', async (req, res) => {
           userId: bUid,
           ownerId
         });
+        p.queue = [];
+        p.volume = 1000;
+        p.filters.bassboost = true;
+        return lavalink.play(targetGuildId, track, {
+          accountId: ub.id,
+          channelId: targetChannelId,
+          userId: bUid,
+          ownerId,
+          noReplace: false, // Replace current song
+          startPaused: true  // Synchronized buffer at 0:00
+        });
+      }));
 
-        if (mode === 'queue') {
-          p.queue.push(track);
-          lavalink.emit('queueUpdate', p);
-          broadcast('playerUpdate', { guildId: targetGuildId, player: p, accountId: ub.id, ownerId }, ownerId);
-        } else {
-          await lavalink.play(targetGuildId, track, {
-            noReplace: true,
-            accountId: ub.id,
-            channelId: targetChannelId,
-            userId: bUid,
-            ownerId
-          });
-          const updated = lavalink.getPlayer(targetGuildId, ub.id, ownerId) || p;
-          broadcast('playerUpdate', { guildId: targetGuildId, player: updated, accountId: ub.id, ownerId }, ownerId);
+      await new Promise(r => setTimeout(r, 180));
+
+      // Simultaneous atomic release
+      await Promise.allSettled(userBots.map(async (ub) => {
+        const b = botManager.bots.get(ub.id);
+        const bUid = b?.client?.user?.id || null;
+        const p = lavalink.getPlayer(targetGuildId, ub.id, ownerId);
+        if (p) {
+          p.paused = false;
+          p.playing = true;
+          p.position = 0;
         }
-      });
+        return lavalink.sendPlayerUpdate(targetGuildId, {
+          paused: false,
+          position: 0
+        }, bUid);
+      }));
 
-      await Promise.allSettled(massPromises);
       return res.json({
         success: true,
-        status: mode === 'queue' ? 'queued' : 'playing',
+        status: 'playing',
         track,
+        savedSong,
         url: finalAudioUrl,
         massPlay: true,
         botCount: userBots.length
       });
     }
 
+    // Single bot playback fallback
+    const targetUserId = targetBot?.client?.user?.id || null;
     const player = lavalink.createPlayer(targetGuildId, {
       accountId: targetBot?.account?.id,
       channelId: targetChannelId,
-      userId,
+      userId: targetUserId,
       ownerId
     });
+    player.volume = 1000;
+    player.filters.bassboost = true;
 
     if (mode === 'queue') {
       player.queue.push(track);
       lavalink.emit('queueUpdate', player);
       broadcast('playerUpdate', { guildId: targetGuildId, player, accountId: targetBot?.account?.id, ownerId }, ownerId);
-      logger.music('QUEUE', `Added "${displayTitle}" to queue for [${targetBot?.account?.label || targetGuildId}]`);
-      res.json({ success: true, status: 'queued', track, url: finalAudioUrl });
+      res.json({ success: true, status: 'queued', track, savedSong, url: finalAudioUrl });
     } else {
-      // Immediate playback
       await lavalink.play(targetGuildId, track, {
-        noReplace: true,
+        noReplace: false,
         accountId: targetBot?.account?.id,
         channelId: targetChannelId,
-        userId,
+        userId: targetUserId,
         ownerId
       });
       const updatedPlayer = lavalink.getPlayer(targetGuildId, targetBot?.account?.id, ownerId) || player;
       broadcast('playerUpdate', { guildId: targetGuildId, player: updatedPlayer, accountId: targetBot?.account?.id, ownerId }, ownerId);
-      logger.music('PLAY', `Playing custom audio "${displayTitle}" on [${targetBot?.account?.label || targetGuildId}]`);
-      res.json({ success: true, status: 'playing', track, url: finalAudioUrl });
+      res.json({ success: true, status: 'playing', track, savedSong, url: finalAudioUrl });
     }
   } catch (err) {
     logger.error('AUDIO', `Custom audio error: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Saved MP3 Library Endpoints
+app.get('/api/music/uploads', (req, res) => {
+  const songs = database.getUploadedSongs(req.user.userId);
+  res.json({ success: true, songs });
+});
+
+app.delete('/api/music/uploads/:id', (req, res) => {
+  const removed = database.deleteUploadedSong(req.params.id, req.user.userId);
+  if (removed) {
+    if (removed.localPath) {
+      const p = path.join(__dirname, 'public', removed.localPath);
+      if (fs.existsSync(p)) {
+        try { fs.unlinkSync(p); } catch (e) {}
+      }
+    }
+    return res.json({ success: true, removed });
+  }
+  res.status(404).json({ success: false, error: 'Song not found' });
+});
+
+app.post('/api/music/uploads/:id/play', async (req, res) => {
+  try {
+    const song = database.getUploadedSongs(req.user.userId).find(s => s.id === req.params.id);
+    if (!song) return res.status(404).json({ success: false, error: 'Song not found in your library' });
+
+    // Delegate to custom-audio endpoint with song's URL
+    req.body = {
+      audioUrl: song.url,
+      title: song.title,
+      mode: req.body.mode || 'playNow',
+      accountId: 'ALL_BOTS'
+    };
+    // Re-run handler logic
+    const { audioUrl, title, mode } = req.body;
+    const ownerId = req.user.userId;
+    const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+
+    let targetGuildId = null;
+    let targetChannelId = null;
+
+    for (const ub of userBots) {
+      const b = botManager.bots.get(ub.id);
+      if (b?.currentVoice?.guildId && b?.currentVoice?.channelId) {
+        targetGuildId = b.currentVoice.guildId;
+        targetChannelId = b.currentVoice.channelId;
+        break;
+      }
+    }
+
+    if (!targetGuildId || !targetChannelId) {
+      const accounts = database.getAccounts(ownerId);
+      for (const acc of accounts) {
+        if (acc.voice247 && acc.voice247.guildId && acc.voice247.channelId) {
+          targetGuildId = acc.voice247.guildId;
+          targetChannelId = acc.voice247.channelId;
+          break;
+        }
+      }
+    }
+
+    if (!targetGuildId || !targetChannelId) {
+      return res.status(400).json({ success: false, error: 'No active voice channel found. Join bots or enable 24/7 first.' });
+    }
+
+    let result = await lavalink.loadTracks(audioUrl);
+    if ((!result || !result.tracks || result.tracks.length === 0) && song.mirrorUrl) {
+      result = await lavalink.loadTracks(song.mirrorUrl);
+    }
+
+    if (!result || !result.tracks || result.tracks.length === 0) {
+      return res.status(400).json({ success: false, error: 'Could not load audio track from saved URL.' });
+    }
+
+    const track = result.tracks[0];
+    track.info.title = title || song.title;
+
+    // Synchronize mass play
+    await Promise.allSettled(userBots.map(async (ub) => {
+      const b = botManager.bots.get(ub.id);
+      const bUid = b?.client?.user?.id || null;
+      const p = lavalink.createPlayer(targetGuildId, {
+        accountId: ub.id,
+        channelId: targetChannelId,
+        userId: bUid,
+        ownerId
+      });
+      p.queue = [];
+      p.volume = 1000;
+      p.filters.bassboost = true;
+      return lavalink.play(targetGuildId, track, {
+        accountId: ub.id,
+        channelId: targetChannelId,
+        userId: bUid,
+        ownerId,
+        noReplace: false,
+        startPaused: true
+      });
+    }));
+
+    await new Promise(r => setTimeout(r, 180));
+
+    await Promise.allSettled(userBots.map(async (ub) => {
+      const b = botManager.bots.get(ub.id);
+      const bUid = b?.client?.user?.id || null;
+      const p = lavalink.getPlayer(targetGuildId, ub.id, ownerId);
+      if (p) {
+        p.paused = false;
+        p.playing = true;
+        p.position = 0;
+      }
+      return lavalink.sendPlayerUpdate(targetGuildId, { paused: false, position: 0 }, bUid);
+    }));
+
+    res.json({ success: true, massPlay: true, track, status: 'playing' });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
