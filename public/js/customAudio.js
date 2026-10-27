@@ -453,7 +453,8 @@ class CustomAudioStudio {
       accountId: 'ALL_BOTS',
       allBots: true,
       guildId,
-      channelId
+      channelId,
+      loop: !!document.getElementById('custom-audio-loop-checkbox')?.checked
     };
 
     let buttonTarget = null;
@@ -581,8 +582,11 @@ class CustomAudioStudio {
             </div>
           </div>
           <div style="display: flex; gap: 6px; flex-shrink: 0;">
-            <button class="btn btn-primary btn-sm" onclick="window.customAudioStudio.playSavedSong('${song.id}')" title="Play Now on All Bots" style="padding: 6px 12px; font-size: 0.8rem;">
+            <button class="btn btn-primary btn-sm" onclick="window.customAudioStudio.playSavedSong('${song.id}', false)" title="Play Now on All Bots" style="padding: 6px 12px; font-size: 0.8rem;">
               <i class="fa-solid fa-play"></i> Play
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="window.customAudioStudio.playSavedSong('${song.id}', true)" title="Play in Continuous Loop" style="padding: 6px 12px; font-size: 0.8rem; border-color: #a855f7; color: #c084fc;">
+              <i class="fa-solid fa-repeat"></i> Loop
             </button>
             <button class="btn btn-outline btn-danger-outline btn-sm" onclick="window.customAudioStudio.deleteSavedSong('${song.id}')" title="Delete Song" style="padding: 6px 10px; font-size: 0.8rem;">
               <i class="fa-solid fa-trash"></i>
@@ -595,8 +599,10 @@ class CustomAudioStudio {
     }
   }
 
-  async playSavedSong(songId) {
-    if (window.showToast) showToast('🚀 Streaming saved MP3 to all bots at 1000% volume...', 'info');
+  async playSavedSong(songId, loop = false) {
+    if (window.showToast) {
+      showToast(loop ? '🔂 Streaming saved MP3 to all bots in CONTINUOUS LOOP mode...' : '🚀 Streaming saved MP3 to all bots at 1000% volume...', 'info');
+    }
     try {
       const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
       const res = await fetch(`/api/music/uploads/${songId}/play`, {
@@ -605,11 +611,13 @@ class CustomAudioStudio {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ mode: 'playNow' })
+        body: JSON.stringify({ mode: 'playNow', loop })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to play song');
-      if (window.showToast) showToast(`🔥 Playing "${data.track.info.title}" on ALL bots with 1000% volume!`, 'success');
+      if (window.showToast) {
+        showToast(loop ? `🔂 Playing "${data.track.info.title}" in CONTINUOUS LOOP on ALL bots!` : `🔥 Playing "${data.track.info.title}" on ALL bots with 1000% volume!`, 'success');
+      }
       if (typeof window.switchTab === 'function') window.switchTab('music');
     } catch (err) {
       if (window.showToast) showToast(`Playback error: ${err.message}`, 'error');

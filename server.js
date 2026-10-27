@@ -439,6 +439,40 @@ app.get('/api/accounts/:id/guilds', async (req, res) => {
   }
 });
 
+// Get deduplicated summary of all joined servers across online bots
+app.get('/api/guilds/all', (req, res) => {
+  try {
+    const guilds = botManager.getAllGuildsSummary(req.user.userId);
+    res.json({ success: true, guilds });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Permanent Server Leave for a Single Bot (with proxy rotation & 24/7 cleanup)
+app.post('/api/accounts/:id/guilds/:guildId/leave', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const useProxy = req.body.useProxy !== false;
+    const result = await botManager.leaveGuild(req.params.id, req.params.guildId, { useProxy });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Permanent Server Leave for ALL BOTS (Mass Leave with proxy rotation & jitter stagger)
+app.post('/api/guilds/:guildId/leave-all', async (req, res) => {
+  try {
+    const useProxy = req.body.useProxy !== false;
+    const result = await botManager.leaveGuildAllBots(req.user.userId, req.params.guildId, { useProxy });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 2. Voice & 24/7 API
 app.post('/api/accounts/:id/voice/join', async (req, res) => {
   try {
@@ -740,6 +774,11 @@ app.post('/api/music/custom-audio', async (req, res) => {
         p.queue = [];
         p.volume = 1000;
         p.filters.bassboost = true;
+        if (req.body.loop === true || req.body.loop === 'track') {
+          p.loop = 'track';
+        } else if (req.body.loop === 'queue') {
+          p.loop = 'queue';
+        }
         return lavalink.play(targetGuildId, track, {
           accountId: ub.id,
           channelId: targetChannelId,
@@ -789,6 +828,11 @@ app.post('/api/music/custom-audio', async (req, res) => {
     });
     player.volume = 1000;
     player.filters.bassboost = true;
+    if (req.body.loop === true || req.body.loop === 'track') {
+      player.loop = 'track';
+    } else if (req.body.loop === 'queue') {
+      player.loop = 'queue';
+    }
 
     if (mode === 'queue') {
       player.queue.push(track);
@@ -843,10 +887,11 @@ app.post('/api/music/uploads/:id/play', async (req, res) => {
       audioUrl: song.url,
       title: song.title,
       mode: req.body.mode || 'playNow',
+      loop: req.body.loop === true || req.body.loop === 'track',
       accountId: 'ALL_BOTS'
     };
     // Re-run handler logic
-    const { audioUrl, title, mode } = req.body;
+    const { audioUrl, title, mode, loop } = req.body;
     const ownerId = req.user.userId;
     const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
 
@@ -902,6 +947,9 @@ app.post('/api/music/uploads/:id/play', async (req, res) => {
       p.queue = [];
       p.volume = 1000;
       p.filters.bassboost = true;
+      if (loop) {
+        p.loop = 'track';
+      }
       return lavalink.play(targetGuildId, track, {
         accountId: ub.id,
         channelId: targetChannelId,
@@ -1343,7 +1391,22 @@ app.post('/api/music/player/:guildId/loop', (req, res) => {
   } else {
     lavalink.setLoop(req.params.guildId, mode, accountId, ownerId);
   }
-  res.json({ success: true });
+  res.json({ success: true, mode });
+});
+
+// Global loop toggle across all active voice bots & guilds
+app.post('/api/music/loop/all', (req, res) => {
+  const { mode } = req.body; // 'off', 'track', 'queue'
+  const ownerId = req.user.userId;
+  const userBots = botManager.getAllBotsStatus(ownerId).filter(b => b.status === 'online');
+  const targetGuilds = new Set();
+  for (const ub of userBots) {
+    if (ub.currentVoice?.guildId) targetGuilds.add(ub.currentVoice.guildId);
+  }
+  for (const guildId of targetGuilds) {
+    lavalink.setLoop(guildId, mode || 'track', 'ALL_BOTS', ownerId);
+  }
+  res.json({ success: true, mode: mode || 'track', updatedGuilds: Array.from(targetGuilds) });
 });
 
 app.post('/api/music/player/:guildId/filter', async (req, res) => {

@@ -283,8 +283,25 @@ class LavalinkClient extends EventEmitter {
     player.playing = false;
     if (event.reason === 'replaced') return;
 
-    if (player.loop === 'track' && player.currentTrack) {
-      this.play(player.guildId, player.currentTrack, { noReplace: false, accountId: player.accountId, userId: player.userId, ownerId: player.ownerId });
+    // Continuous Loop for single track or queue with single track (applies to music & uploaded MP3s)
+    if ((player.loop === 'track' || (player.loop === 'queue' && player.queue.length === 0)) && player.currentTrack) {
+      const trackToRepeat = player.currentTrack;
+      player.position = 0;
+      player.playing = true;
+      player.paused = false;
+      const filtersPayload = this.buildFiltersPayload(player);
+      this.sendPlayerUpdate(player.guildId, {
+        track: { encoded: trackToRepeat.encoded },
+        position: 0,
+        paused: false,
+        volume: Math.min(1000, player.volume),
+        filters: filtersPayload
+      }, player.userId).then(() => {
+        this.emit('trackStart', { player, track: trackToRepeat, ownerId: player.ownerId, accountId: player.accountId });
+        this.emit('playerUpdate', player);
+      }).catch(err => {
+        logger.error('MUSIC', `Loop repeat track failed: ${err.message}`);
+      });
       return;
     }
 
@@ -816,12 +833,21 @@ class LavalinkClient extends EventEmitter {
   }
 
   setLoop(guildId, mode, identifier = null, ownerId = null) {
-    const player = this.getPlayer(guildId, identifier, ownerId);
-    if (!player) return;
+    if (!['off', 'track', 'queue'].includes(mode)) return;
 
-    if (['off', 'track', 'queue'].includes(mode)) {
-      player.loop = mode;
-      this.emit('playerUpdate', player);
+    if (!identifier || identifier === 'ALL_BOTS') {
+      for (const [, p] of this.players.entries()) {
+        if (p.guildId === guildId && (!ownerId || p.ownerId === ownerId)) {
+          p.loop = mode;
+          this.emit('playerUpdate', p);
+        }
+      }
+    } else {
+      const player = this.getPlayer(guildId, identifier, ownerId);
+      if (player) {
+        player.loop = mode;
+        this.emit('playerUpdate', player);
+      }
     }
   }
 

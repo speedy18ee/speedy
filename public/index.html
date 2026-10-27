@@ -291,6 +291,64 @@
           </div>
         </div>
 
+        <!-- Permanent Server Leave & Mass Guild Cleaner -->
+        <div class="card" id="permanent-leave-card" style="margin-bottom: 22px; border: 1px solid rgba(239, 68, 68, 0.4); background: linear-gradient(180deg, rgba(32, 14, 18, 0.85) 0%, rgba(12, 8, 10, 0.95) 100%); box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 25px rgba(239, 68, 68, 0.15); border-radius: 20px;">
+          <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid rgba(255,255,255,0.07); padding: 16px 20px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div style="width:38px; height:38px; border-radius:12px; background:rgba(239, 68, 68, 0.2); display:flex; align-items:center; justify-content:center; border: 1px solid rgba(239, 68, 68, 0.4);">
+                <i class="fa-solid fa-arrow-right-from-bracket" style="color: #ef4444; font-size:1.15rem;"></i>
+              </div>
+              <div>
+                <h3 style="margin:0; font-size:1.05rem; font-weight:800; color:#ffffff;">Permanent Server Leave & Cleaner</h3>
+                <span style="font-size:0.75rem; color:#94a3b8;">Safely leave any Discord server permanently across single or all bots</span>
+              </div>
+            </div>
+            <span class="badge badge-danger" style="padding: 6px 12px; font-weight:700;"><i class="fa-solid fa-shield-halved"></i> Proxy Protected</span>
+          </div>
+
+          <div class="card-body" style="padding: 18px 20px;">
+            <p style="font-size: 0.82rem; color: #cbd5e1; margin-bottom: 14px; line-height: 1.45;">
+              Leaves the selected Discord server permanently. Disconnects bots from voice, completely removes 24/7 reconnect rules, and routes API requests through proxy rotation with jitter delays to prevent account rate-limits or Discord flags.
+            </p>
+
+            <div style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; margin-bottom: 16px;">
+              <div>
+                <label style="font-size:0.82rem; font-weight:700; color:#e2e8f0; display:block; margin-bottom:6px;">
+                  <i class="fa-solid fa-server" style="color:#ef4444;"></i> Select Server to Leave:
+                </label>
+                <div style="display:flex; gap:8px;">
+                  <select id="leave-guild-select" class="form-select" style="flex:1;">
+                    <option value="">-- Click "Refresh Servers" to load --</option>
+                  </select>
+                  <button class="btn btn-outline" type="button" onclick="loadGuildsForLeave()" title="Refresh joined servers">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label style="font-size:0.82rem; font-weight:700; color:#e2e8f0; display:block; margin-bottom:6px;">
+                  <i class="fa-solid fa-robot" style="color:#c084fc;"></i> Target Bots:
+                </label>
+                <select id="leave-bot-select" class="form-select">
+                  <option value="ALL_BOTS">👑 ALL BOTS (Mass Server Leave)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);">
+              <label class="toggle-checkbox" style="font-size: 0.82rem; color: #cbd5e1; display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="leave-use-proxy-checkbox" checked>
+                <span><b>Route through Proxy Pool</b> (1,938 proxies loaded for IP & token protection)</span>
+              </label>
+
+              <button class="btn btn-outline btn-danger-outline" id="btn-submit-leave-guild" onclick="submitPermanentServerLeave()" style="padding: 12px 20px; font-weight: 700;">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> Leave Server Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="info-banner">
           <i class="fa-solid fa-circle-info"></i>
           <div>
@@ -675,6 +733,13 @@
               <div class="form-group">
                 <label style="font-size: 0.8rem; color: #a1a1aa;">Custom Song / Track Title:</label>
                 <input type="text" class="form-input" id="upload-custom-title" placeholder="Track title (defaults to filename)...">
+              </div>
+
+              <div style="margin-top: 10px; margin-bottom: 6px;">
+                <label class="toggle-checkbox" style="font-size: 0.82rem; color: #c084fc; display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="custom-audio-loop-checkbox">
+                  <span><i class="fa-solid fa-repeat"></i> <b>Enable Continuous Loop</b> (Repeat this song forever)</span>
+                </label>
               </div>
 
               <div id="upload-action-row" style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;">

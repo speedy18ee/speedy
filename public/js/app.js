@@ -347,6 +347,10 @@ function switchTab(tabId) {
   const subEl = document.getElementById('page-subtitle');
   if (subEl) subEl.textContent = sub;
 
+  if (tabId === 'voice') {
+    if (typeof loadGuildsForLeave === 'function') loadGuildsForLeave();
+  }
+
   if (tabId === 'camera') {
     if (window.cameraStudio) {
       window.cameraStudio.renderCameraBotCards();
@@ -1225,23 +1229,33 @@ document.getElementById('btn-sync-bots')?.addEventListener('click', async () => 
   }
 });
 
-// Loop
+// Loop Mode Controller (Seamless loop for music tracks & uploaded MP3s)
 document.getElementById('btn-loop-mode')?.addEventListener('click', async () => {
-  if (!state.selectedGuildId || !state.activePlayer) return;
-
+  const targetGuildId = state.selectedGuildId || state.accounts.find(a => a.currentVoice?.guildId)?.currentVoice?.guildId;
   const modes = ['off', 'track', 'queue'];
-  const currentIdx = modes.indexOf(state.activePlayer.loop || 'off');
+  const currentMode = state.activePlayer?.loop || 'off';
+  const currentIdx = modes.indexOf(currentMode);
   const nextMode = modes[(currentIdx + 1) % modes.length];
 
   try {
-    await fetch(`/api/music/player/${state.selectedGuildId}/loop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: nextMode, accountId: state.selectedMusicBotId })
-    });
-    state.activePlayer.loop = nextMode;
-    document.getElementById('loop-mode-text').textContent = nextMode.toUpperCase();
-    showToast(`Loop Mode: ${nextMode.toUpperCase()}`, 'info');
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    if (targetGuildId) {
+      await fetch(`/api/music/player/${targetGuildId}/loop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ mode: nextMode, accountId: state.selectedMusicBotId || 'ALL_BOTS' })
+      });
+    } else {
+      await fetch('/api/music/loop/all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ mode: nextMode })
+      });
+    }
+    if (state.activePlayer) state.activePlayer.loop = nextMode;
+    const txt = document.getElementById('loop-mode-text');
+    if (txt) txt.textContent = nextMode === 'track' ? 'TRACK 🔂' : (nextMode === 'queue' ? 'QUEUE 🔁' : 'OFF');
+    showToast(nextMode === 'track' ? '🔂 Loop: Single Song Repeats Forever' : (nextMode === 'queue' ? '🔁 Loop: Entire Queue Repeats' : 'Loop: OFF'), 'info');
   } catch (e) {}
 });
 
@@ -2000,6 +2014,113 @@ async function executeMassLeaveVoice() {
     btn.innerHTML = '<i class="fa-solid fa-phone-slash"></i> Leave All';
   }
 }
+
+// --- PERMANENT SERVER LEAVE CONTROLLER (PROXY PROTECTED) ---
+async function loadGuildsForLeave() {
+  const selectEl = document.getElementById('leave-guild-select');
+  if (!selectEl) return;
+
+  try {
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch('/api/guilds/all', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) return;
+
+    const guilds = data.guilds || [];
+    if (guilds.length === 0) {
+      selectEl.innerHTML = '<option value="">-- No Joined Servers Found --</option>';
+      return;
+    }
+
+    selectEl.innerHTML = '<option value="">-- Select Discord Server to Leave --</option>' +
+      guilds.map(g => `<option value="${g.id}">${escapeHTML(g.name)} (${g.botCount} bot${g.botCount > 1 ? 's' : ''} inside)</option>`).join('');
+
+    const botSelectEl = document.getElementById('leave-bot-select');
+    if (botSelectEl) {
+      const onlineBots = state.accounts.filter(a => a.status === 'online');
+      botSelectEl.innerHTML = '<option value="ALL_BOTS">👑 ALL BOTS (Mass Server Leave)</option>' +
+        onlineBots.map(b => `<option value="${b.id}">${escapeHTML(b.label || b.user?.username || b.id)}</option>`).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load guilds for leave:', err);
+  }
+}
+
+async function submitPermanentServerLeave() {
+  const guildSelect = document.getElementById('leave-guild-select');
+  const botSelect = document.getElementById('leave-bot-select');
+  const proxyCheckbox = document.getElementById('leave-use-proxy-checkbox');
+  const btn = document.getElementById('btn-submit-leave-guild');
+
+  const guildId = guildSelect?.value;
+  if (!guildId) {
+    showToast('Please select a Discord server to leave!', 'warning');
+    return;
+  }
+
+  const selectedServerName = guildSelect.options[guildSelect.selectedIndex]?.text || guildId;
+  const targetBot = botSelect?.value || 'ALL_BOTS';
+  const isMass = targetBot === 'ALL_BOTS';
+  const useProxy = proxyCheckbox ? proxyCheckbox.checked : true;
+
+  const confirmMsg = isMass
+    ? `⚠️ PERMANENT SERVER LEAVE WARNING:\n\nAre you sure you want ALL BOTS to leave:\n"${selectedServerName}"?\n\nThis will permanently delete 24/7 Stay rules, disconnect bots from voice, and exit the server safely with proxy rotation.\n\nProceed?`
+    : `⚠️ PERMANENT SERVER LEAVE WARNING:\n\nAre you sure you want this bot to permanently leave:\n"${selectedServerName}"?\n\n24/7 rules will be erased and the bot will exit the server.\n\nProceed?`;
+
+  if (!confirm(confirmMsg)) return;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Leaving Server...';
+  }
+
+  try {
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    let res;
+    if (isMass) {
+      res = await fetch(`/api/guilds/${guildId}/leave-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ useProxy })
+      });
+    } else {
+      res = await fetch(`/api/accounts/${targetBot}/guilds/${guildId}/leave`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ useProxy })
+      });
+    }
+
+    const data = await res.json();
+    if (!res.ok || (data.success === false && data.leftCount === 0)) {
+      throw new Error(data.error || 'Failed to leave server');
+    }
+
+    const count = data.leftCount !== undefined ? data.leftCount : 1;
+    showToast(`✅ Permanently left "${data.guildName || selectedServerName}" across ${count} bot(s)!`, 'success');
+
+    await loadGuildsForLeave();
+    loadAccounts();
+    renderVoiceManagerCards();
+  } catch (err) {
+    showToast(`Server leave error: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> Leave Server Permanently';
+    }
+  }
+}
+window.loadGuildsForLeave = loadGuildsForLeave;
+window.submitPermanentServerLeave = submitPermanentServerLeave;
 
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {

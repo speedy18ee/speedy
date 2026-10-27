@@ -3,9 +3,99 @@ require("./patch");
 
 const { Client } = require("discord.js-selfbot-v13");
 const EventEmitter = require("events");
+const fs = require("fs");
+const path = require("path");
+const https = require("https");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+const { SocksProxyAgent } = require("socks-proxy-agent");
 const database = require("./database");
 const logger = require("./logger");
 const config = require("./config");
+
+// Rotating proxy pool for rate-limit protection & safe mass actions
+let freeProxiesList = [];
+let proxyRotationIndex = 0;
+
+function loadFreeProxies() {
+  try {
+    const pPath = path.join(__dirname, "..", "data", "free_proxies.txt");
+    if (fs.existsSync(pPath)) {
+      freeProxiesList = fs.readFileSync(pPath, "utf8")
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(s => s && s.includes(":"));
+      logger.info("PROXY", `Loaded ${freeProxiesList.length} proxies for server operations & rate limit protection`);
+    }
+  } catch (e) {
+    logger.warn("PROXY", `Could not load free_proxies.txt: ${e.message}`);
+  }
+}
+loadFreeProxies();
+
+function getNextRotatingProxy() {
+  if (freeProxiesList.length === 0) return null;
+  const p = freeProxiesList[proxyRotationIndex % freeProxiesList.length];
+  proxyRotationIndex = (proxyRotationIndex + 1) % freeProxiesList.length;
+  return p;
+}
+
+// REST request helper using proxy agent
+function executeGuildLeaveRest(token, guildId, proxy = null) {
+  return new Promise((resolve, reject) => {
+    let agent = undefined;
+    if (proxy) {
+      try {
+        if (proxy.startsWith("socks")) {
+          agent = new SocksProxyAgent(proxy);
+        } else {
+          const formatted = proxy.startsWith("http") ? proxy : `http://${proxy}`;
+          agent = new HttpsProxyAgent(formatted);
+        }
+      } catch (err) {
+        agent = undefined;
+      }
+    }
+
+    const options = {
+      hostname: "discord.com",
+      port: 443,
+      path: `/api/v9/users/@me/guilds/${guildId}`,
+      method: "DELETE",
+      headers: {
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+      },
+      agent,
+      timeout: 10000
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => { data += chunk; });
+      res.on("end", () => {
+        if (res.statusCode === 204 || res.statusCode === 200) {
+          resolve({ ok: true, status: res.statusCode });
+        } else if (res.statusCode === 404) {
+          resolve({ ok: true, status: 404, message: "Not in server" });
+        } else {
+          resolve({ ok: false, status: res.statusCode, error: data || `Status ${res.statusCode}` });
+        }
+      });
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("Proxy request timeout"));
+    });
+
+    req.on("error", (err) => {
+      reject(err);
+    });
+
+    req.end();
+  });
+}
 
 // Optional proxy pool (Direct connection enabled by default without proxy limits)
 const WORKING_PROXIES = [];
@@ -837,6 +927,190 @@ class BotManager extends EventEmitter {
   }
 
   // --- Get Status Summary for accounts (filtered by userId if provided) ---
+  // --- Permanent Guild Leave (Single Bot with Proxy & 24/7 Cleanup) ---
+  async leaveGuild(accountId, guildId, options = {}) {
+    const acc = database.getAccount(accountId);
+    if (!acc) throw new Error("Account not found");
+
+    const botEntry = this.bots.get(accountId);
+    const client = botEntry?.client;
+
+    let guildName = guildId;
+    if (client) {
+      const cachedGuild = client.guilds.cache.get(guildId);
+      if (cachedGuild) guildName = cachedGuild.name;
+    }
+
+    // 1. Permanently delete/disable 24/7 Voice Stay for this server so it never auto-reconnects
+    if (acc.voice247 && (acc.voice247.guildId === guildId || !guildId)) {
+      database.updateVoice247(accountId, {
+        enabled: false,
+        guildId: "",
+        guildName: "",
+        channelId: "",
+        channelName: "",
+        selfMute: false,
+        selfDeaf: false
+      });
+      logger.info("GUILD", `[${acc.label}] Permanently disabled 24/7 Voice Stay for guild "${guildName}" (${guildId})`);
+    }
+
+    // 2. Disconnect from voice channel if currently inside this guild
+    if (botEntry?.currentVoice?.guildId === guildId) {
+      try {
+        await this.leaveVoice(accountId);
+      } catch (e) {}
+    }
+
+    // 3. Perform leave via Rotating Proxy REST or Client
+    let leaveSuccess = false;
+    let usedProxy = null;
+
+    if (options.useProxy !== false && freeProxiesList.length > 0) {
+      const candidate = getNextRotatingProxy();
+      usedProxy = candidate;
+      try {
+        const restRes = await executeGuildLeaveRest(acc.token, guildId, candidate);
+        if (restRes.ok) {
+          leaveSuccess = true;
+          logger.success("GUILD", `[${acc.label}] Successfully left server "${guildName}" via proxy (${candidate}) [Status ${restRes.status}]`);
+        }
+      } catch (proxyErr) {
+        logger.warn("GUILD", `[${acc.label}] Proxy leave attempt with ${candidate} failed (${proxyErr.message}), falling back to direct leave...`);
+      }
+    }
+
+    // Direct fallback if proxy disabled, failed, or direct client available
+    if (!leaveSuccess) {
+      if (client && client.guilds.cache.has(guildId)) {
+        try {
+          await client.guilds.cache.get(guildId).leave();
+          leaveSuccess = true;
+          logger.success("GUILD", `[${acc.label}] Successfully left server "${guildName}" directly via client`);
+        } catch (clientErr) {
+          if (clientErr.code === 10004 || clientErr.message?.includes('Unknown Guild')) {
+            leaveSuccess = true;
+          } else {
+            throw clientErr;
+          }
+        }
+      } else {
+        const directRes = await executeGuildLeaveRest(acc.token, guildId, null);
+        if (directRes.ok) {
+          leaveSuccess = true;
+          logger.success("GUILD", `[${acc.label}] Successfully left server "${guildName}" directly via REST`);
+        } else {
+          throw new Error(directRes.error || `Failed to leave server (Status: ${directRes.status})`);
+        }
+      }
+    }
+
+    // 4. Remove from bot's memory cache
+    if (client) {
+      client.guilds.cache.delete(guildId);
+    }
+
+    this.emit("guildLeave", { accountId, guildId, guildName });
+
+    return {
+      success: true,
+      accountId,
+      accountLabel: acc.label,
+      guildId,
+      guildName,
+      usedProxy: usedProxy || "Direct"
+    };
+  }
+
+  // --- Permanent Guild Leave for ALL BOTS (Mass Leave with Proxy Rotation & Jitter Stagger) ---
+  async leaveGuildAllBots(userId, guildId, options = {}) {
+    const accounts = database.getAccounts(userId);
+    const results = [];
+    let leftCount = 0;
+    let targetGuildName = guildId;
+
+    const targetBots = [];
+    for (const acc of accounts) {
+      const b = this.bots.get(acc.id);
+      if (b && b.status === "online" && b.client) {
+        if (b.client.guilds.cache.has(guildId)) {
+          targetGuildName = b.client.guilds.cache.get(guildId).name;
+          targetBots.push(acc);
+        }
+      }
+    }
+
+    if (targetBots.length === 0) {
+      for (const acc of accounts) {
+        const b = this.bots.get(acc.id);
+        if (b && b.status === "online") {
+          targetBots.push(acc);
+        }
+      }
+    }
+
+    logger.info("GUILD", `Initiating permanent server leave for "${targetGuildName}" (${guildId}) across ${targetBots.length} bots with proxy rotation & rate limit stagger...`);
+
+    for (let i = 0; i < targetBots.length; i++) {
+      const acc = targetBots[i];
+      try {
+        const res = await this.leaveGuild(acc.id, guildId, options);
+        results.push({ accountId: acc.id, label: acc.label, success: true, proxy: res.usedProxy });
+        leftCount++;
+      } catch (err) {
+        logger.error("GUILD", `[${acc.label}] Failed to leave server ${guildId}: ${err.message}`);
+        results.push({ accountId: acc.id, label: acc.label, success: false, error: err.message });
+      }
+
+      if (i < targetBots.length - 1) {
+        const jitter = Math.floor(1200 + Math.random() * 800);
+        await new Promise(r => setTimeout(r, jitter));
+      }
+    }
+
+    return {
+      success: true,
+      guildId,
+      guildName: targetGuildName,
+      totalBots: targetBots.length,
+      leftCount,
+      results
+    };
+  }
+
+  // --- Get Deduplicated Summary of All Guilds Across Online Bots ---
+  getAllGuildsSummary(userId = null) {
+    const accounts = database.getAccounts(userId);
+    const guildsMap = new Map();
+
+    for (const acc of accounts) {
+      const botEntry = this.bots.get(acc.id);
+      if (botEntry && botEntry.status === "online" && botEntry.client) {
+        for (const [, guild] of botEntry.client.guilds.cache) {
+          if (!guildsMap.has(guild.id)) {
+            guildsMap.set(guild.id, {
+              id: guild.id,
+              name: guild.name,
+              icon: guild.iconURL({ dynamic: true, format: "png", size: 64 }),
+              botCount: 0,
+              memberBots: []
+            });
+          }
+          const entry = guildsMap.get(guild.id);
+          entry.botCount++;
+          entry.memberBots.push({
+            id: acc.id,
+            label: acc.label,
+            username: botEntry.client.user?.username || acc.label,
+            avatar: botEntry.client.user?.displayAvatarURL({ dynamic: true, format: "png", size: 64 })
+          });
+        }
+      }
+    }
+
+    return Array.from(guildsMap.values()).sort((a, b) => b.botCount - a.botCount);
+  }
+
   getAllBotsStatus(userId = null) {
     const accounts = database.getAccounts(userId);
     return accounts.map(acc => {
