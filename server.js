@@ -441,9 +441,10 @@ app.get('/api/accounts/:id/guilds', async (req, res) => {
 });
 
 // Get deduplicated summary of all joined servers across online bots
-app.get('/api/guilds/all', (req, res) => {
+app.get('/api/guilds/all', requireAuth, (req, res) => {
   try {
-    const guilds = botManager.getAllGuildsSummary(req.user.userId);
+    const userId = req.user?.userId || null;
+    const guilds = botManager.getAllGuildsSummary(userId);
     res.json({ success: true, guilds });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -451,9 +452,10 @@ app.get('/api/guilds/all', (req, res) => {
 });
 
 // Permanent Server Leave for a Single Bot (with proxy rotation & 24/7 cleanup)
-app.post('/api/accounts/:id/guilds/:guildId/leave', async (req, res) => {
+app.post('/api/accounts/:id/guilds/:guildId/leave', requireAuth, async (req, res) => {
   try {
-    const acc = database.getAccount(req.params.id, req.user.userId);
+    const userId = req.user?.userId || null;
+    const acc = database.getAccount(req.params.id, userId);
     if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
     const useProxy = req.body.useProxy !== false;
     const result = await botManager.leaveGuild(req.params.id, req.params.guildId, { useProxy });
@@ -464,10 +466,11 @@ app.post('/api/accounts/:id/guilds/:guildId/leave', async (req, res) => {
 });
 
 // Permanent Server Leave for ALL BOTS (Mass Leave with proxy rotation & jitter stagger)
-app.post('/api/guilds/:guildId/leave-all', async (req, res) => {
+app.post('/api/guilds/:guildId/leave-all', requireAuth, async (req, res) => {
   try {
+    const userId = req.user?.userId || null;
     const useProxy = req.body.useProxy !== false;
-    const result = await botManager.leaveGuildAllBots(req.user.userId, req.params.guildId, { useProxy });
+    const result = await botManager.leaveGuildAllBots(userId, req.params.guildId, { useProxy });
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

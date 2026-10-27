@@ -1080,31 +1080,39 @@ class BotManager extends EventEmitter {
 
   // --- Get Deduplicated Summary of All Guilds Across Online Bots ---
   getAllGuildsSummary(userId = null) {
-    const accounts = database.getAccounts(userId);
+    let accounts = database.getAccounts(userId);
+    if (!accounts || accounts.length === 0) {
+      accounts = database.accounts || [];
+    }
     const guildsMap = new Map();
 
     for (const acc of accounts) {
       const botEntry = this.bots.get(acc.id);
       if (botEntry && botEntry.status === "online" && botEntry.client) {
-        for (const [, guild] of botEntry.client.guilds.cache) {
-          if (!guildsMap.has(guild.id)) {
-            guildsMap.set(guild.id, {
-              id: guild.id,
-              name: guild.name,
-              icon: guild.iconURL({ dynamic: true, format: "png", size: 64 }),
-              botCount: 0,
-              memberBots: []
+        try {
+          for (const [, guild] of botEntry.client.guilds.cache) {
+            if (!guildsMap.has(guild.id)) {
+              let iconUrl = null;
+              try {
+                iconUrl = guild.iconURL({ dynamic: true, format: "png", size: 64 });
+              } catch (e) {}
+              guildsMap.set(guild.id, {
+                id: guild.id,
+                name: guild.name || `Server ${guild.id}`,
+                icon: iconUrl,
+                botCount: 0,
+                memberBots: []
+              });
+            }
+            const entry = guildsMap.get(guild.id);
+            entry.botCount++;
+            entry.memberBots.push({
+              id: acc.id,
+              label: acc.label,
+              username: botEntry.client.user?.username || acc.label
             });
           }
-          const entry = guildsMap.get(guild.id);
-          entry.botCount++;
-          entry.memberBots.push({
-            id: acc.id,
-            label: acc.label,
-            username: botEntry.client.user?.username || acc.label,
-            avatar: botEntry.client.user?.displayAvatarURL({ dynamic: true, format: "png", size: 64 })
-          });
-        }
+        } catch (e) {}
       }
     }
 

@@ -2026,31 +2026,54 @@ async function loadGuildsForLeave() {
   const selectEl = document.getElementById('leave-guild-select');
   if (!selectEl) return;
 
+  selectEl.innerHTML = '<option value="">⌛ Loading joined servers...</option>';
+
   try {
     const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
     const res = await fetch('/api/guilds/all', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
-    if (!res.ok || !data.success) return;
+    let guilds = (data && data.success && Array.isArray(data.guilds)) ? data.guilds : [];
 
-    const guilds = data.guilds || [];
+    // Fallback: If empty, query first online bot's guilds
+    if (guilds.length === 0 && state.accounts) {
+      const onlineBots = state.accounts.filter(a => a.status === 'online');
+      for (const ob of onlineBots.slice(0, 3)) {
+        try {
+          const gRes = await fetch(`/api/accounts/${ob.id}/guilds`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const gData = await gRes.json();
+          if (gData.success && Array.isArray(gData.guilds) && gData.guilds.length > 0) {
+            guilds = gData.guilds.map(g => ({
+              id: g.id,
+              name: g.name,
+              botCount: 1
+            }));
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
     if (guilds.length === 0) {
       selectEl.innerHTML = '<option value="">-- No Joined Servers Found --</option>';
       return;
     }
 
     selectEl.innerHTML = '<option value="">-- Select Discord Server to Leave --</option>' +
-      guilds.map(g => `<option value="${g.id}">${escapeHTML(g.name)} (${g.botCount} bot${g.botCount > 1 ? 's' : ''} inside)</option>`).join('');
+      guilds.map(g => `<option value="${g.id}">${escapeHTML(g.name)} (${g.botCount || 1} bot${(g.botCount || 1) > 1 ? 's' : ''} inside)</option>`).join('');
 
     const botSelectEl = document.getElementById('leave-bot-select');
     if (botSelectEl) {
-      const onlineBots = state.accounts.filter(a => a.status === 'online');
+      const onlineBots = state.accounts ? state.accounts.filter(a => a.status === 'online') : [];
       botSelectEl.innerHTML = '<option value="ALL_BOTS">👑 ALL BOTS (Mass Server Leave)</option>' +
         onlineBots.map(b => `<option value="${b.id}">${escapeHTML(b.label || b.user?.username || b.id)}</option>`).join('');
     }
   } catch (err) {
     console.error('Failed to load guilds for leave:', err);
+    selectEl.innerHTML = '<option value="">-- Failed to load servers (click refresh) --</option>';
   }
 }
 
