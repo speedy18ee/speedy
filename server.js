@@ -392,6 +392,30 @@ app.post('/api/accounts/voice/leave-all', async (req, res) => {
   }
 });
 
+// Toggle / Set Discord Camera (self_video) for a single bot
+app.post('/api/accounts/:id/camera', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const { enabled = true } = req.body;
+    const result = await botManager.setCamera(req.params.id, enabled !== false);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Toggle / Set Discord Camera for ALL bots
+app.post('/api/accounts/camera/all', async (req, res) => {
+  try {
+    const { enabled = true } = req.body;
+    const result = await botManager.setAllCamera(req.user.userId, enabled !== false);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/accounts/:id/presence', (req, res) => {
   try {
     const acc = database.getAccount(req.params.id, req.user.userId);

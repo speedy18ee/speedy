@@ -228,6 +228,9 @@ function handleServerEvent(type, data) {
         updateAccountCard(accV);
         renderVoiceManagerCards();
         renderStats();
+        if (window.cameraStudio) {
+          window.cameraStudio.renderCameraBotCards();
+        }
       }
       break;
 
@@ -333,6 +336,7 @@ function switchTab(tabId) {
     overview: ['Dashboard Overview', 'EXC 24/7 Multi-Account & Audio Controller'],
     accounts: ['Multi-Account Manager', 'Configure Discord Tokens, Status & Presences'],
     voice: ['24/7 Voice Stay Controller', 'Keep accounts connected to Voice Channels indefinitely'],
+    camera: ['WebCam & Video Studio', 'Broadcast live webcam stream to Discord bots in voice channels'],
     music: ['Music Player Deck', 'High fidelity music playback & extreme volume audio filters'],
     settings: ['System & Audio Settings', 'Customize voice auto-reconnect and playback options']
   };
@@ -342,6 +346,12 @@ function switchTab(tabId) {
   if (titleEl) titleEl.textContent = t;
   const subEl = document.getElementById('page-subtitle');
   if (subEl) subEl.textContent = sub;
+
+  if (tabId === 'camera') {
+    if (window.cameraStudio) {
+      window.cameraStudio.renderCameraBotCards();
+    }
+  }
 
   if (tabId === 'music') {
     populateMusicBotSelect();
@@ -445,6 +455,9 @@ function renderAllAccounts() {
         <i class="fa-solid fa-ghost"></i>
         <p>No accounts configured. Click <b>"Add Account"</b> to get started!</p>
       </div>`;
+    if (window.cameraStudio) {
+      window.cameraStudio.renderCameraBotCards();
+    }
     return;
   }
 
@@ -455,6 +468,10 @@ function renderAllAccounts() {
     grid.appendChild(createAccountCard(acc));
     overviewList.appendChild(createMiniAccountItem(acc));
   });
+
+  if (window.cameraStudio) {
+    window.cameraStudio.renderCameraBotCards();
+  }
 }
 
 function createAccountCard(acc) {

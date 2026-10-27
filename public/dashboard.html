@@ -69,6 +69,11 @@
           <i class="fa-solid fa-tower-broadcast"></i>
           <span>24/7 Voice Stay</span>
         </a>
+        <a href="#camera" class="nav-item" data-tab="camera">
+          <i class="fa-solid fa-video"></i>
+          <span>WebCam Studio</span>
+          <span class="badge-count" id="badge-camera-live" style="display:none; background:#22c55e;">LIVE</span>
+        </a>
         <a href="#music" class="nav-item" data-tab="music">
           <i class="fa-solid fa-compact-disc"></i>
           <span>Music Player</span>
@@ -299,7 +304,120 @@
         </div>
       </section>
 
-      <!-- TAB 4: MUSIC PLAYER -->
+      <!-- TAB 4: WEBCAM & DISCORD VIDEO STUDIO -->
+      <section id="tab-camera" class="tab-pane">
+        <div class="camera-studio-layout">
+          <!-- Left Column: Camera Viewport -->
+          <div class="card" style="border: 1px solid rgba(168, 85, 247, 0.4); background: linear-gradient(180deg, rgba(20, 15, 30, 0.85) 0%, rgba(10, 10, 16, 0.95) 100%); border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); display: flex; align-items: center; justify-content: center; color: #22c55e;">
+                  <i class="fa-solid fa-video"></i>
+                </div>
+                <div>
+                  <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Live WebCam Stream</h3>
+                  <p style="font-size: 0.76rem; color: #a1a1aa;">Capture browser camera feed to broadcast to Discord voice channels</p>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <span class="badge badge-warning" id="webcam-status-badge">
+                  <i class="fa-solid fa-circle" style="color: #eab308; font-size: 0.6rem;"></i> STANDBY
+                </span>
+                <span class="badge" id="webcam-res-badge" style="background: rgba(255,255,255,0.08); color: #cbd5e1; font-size: 0.72rem;">
+                  HD 720p
+                </span>
+              </div>
+            </div>
+
+            <!-- Video Viewport -->
+            <div style="position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">
+              <video id="webcam-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
+
+              <div id="webcam-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #71717a; padding: 20px;">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; margin-bottom: 12px; font-size: 1.6rem; color: #a1a1aa;">
+                  <i class="fa-solid fa-camera"></i>
+                </div>
+                <h4 style="color: #ffffff; font-size: 0.95rem; margin-bottom: 4px;">Camera is Idle</h4>
+                <p style="font-size: 0.78rem; max-width: 280px; color: #a1a1aa;">Click "Start WebCam" below to grant camera access and activate your live video feed</p>
+              </div>
+
+              <!-- Live Audio VU bar along bottom edge of video -->
+              <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: rgba(0,0,0,0.6);">
+                <div id="webcam-vu-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e 0%, #a855f7 70%, #ef4444 100%); transition: width 0.05s ease;"></div>
+              </div>
+            </div>
+
+            <!-- WebCam Action Controls -->
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; justify-content: space-between; align-items: center;">
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-primary" id="btn-camera-toggle-webcam">
+                  <i class="fa-solid fa-video"></i> Start WebCam
+                </button>
+                <button class="btn btn-outline" id="btn-camera-flip" title="Switch Front/Back Camera">
+                  <i class="fa-solid fa-camera-rotate"></i> Flip Camera
+                </button>
+              </div>
+            </div>
+
+            <!-- Video Filters Preset Bar -->
+            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.07);">
+              <label style="font-size: 0.76rem; color: #a1a1aa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">
+                <i class="fa-solid fa-wand-magic-sparkles" style="color: #c084fc;"></i> Studio Video Filters
+              </label>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-outline cam-filter-btn active" data-filter="none" style="font-size: 0.75rem; padding: 5px 10px;">Normal</button>
+                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="glow" style="font-size: 0.75rem; padding: 5px 10px;">✨ AMOLED Glow</button>
+                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="cyberpunk" style="font-size: 0.75rem; padding: 5px 10px;">💜 Cyberpunk</button>
+                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="matrix" style="font-size: 0.75rem; padding: 5px 10px;">🟢 Matrix</button>
+                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="noir" style="font-size: 0.75rem; padding: 5px 10px;">🖤 Noir Film</button>
+                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="vintage" style="font-size: 0.75rem; padding: 5px 10px;">🎞 Vintage</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Discord Bot Video Control & Streaming Status -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- Broadcast Card -->
+            <div class="card" style="border: 1px solid rgba(34, 197, 94, 0.4); background: linear-gradient(180deg, rgba(16, 28, 20, 0.85) 0%, rgba(10, 16, 12, 0.95) 100%); border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 20px rgba(34, 197, 94, 0.1);">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); display: flex; align-items: center; justify-content: center; color: #22c55e;">
+                  <i class="fa-solid fa-satellite-dish"></i>
+                </div>
+                <div>
+                  <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Discord Video Broadcast</h3>
+                  <p style="font-size: 0.76rem; color: #a1a1aa;">Stream camera video status directly to Discord Gateway (Opcode 4)</p>
+                </div>
+              </div>
+
+              <p style="font-size: 0.82rem; color: #cbd5e1; margin-bottom: 16px; line-height: 1.45;">
+                When broadcast is activated, all bots currently inside voice channels will display the <b style="color: #22c55e;">Green Discord Camera Icon</b> and live video feed inside their voice channels.
+              </p>
+
+              <button class="btn btn-primary" id="btn-camera-broadcast-all" style="width: 100%; padding: 14px; font-weight: 700; font-size: 0.95rem; justify-content: center;">
+                <i class="fa-solid fa-satellite-dish"></i> Broadcast Camera to All Bots (Discord Video)
+              </button>
+            </div>
+
+            <!-- Per-Bot Video Stream Controls -->
+            <div class="card" style="border: 1px solid rgba(255, 255, 255, 0.08); background: #0c0c12; border-radius: 20px; padding: 20px; flex: 1;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h4 style="font-size: 0.92rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+                  <i class="fa-solid fa-users" style="color: #a855f7;"></i> Voice Bots Video Status
+                </h4>
+                <button class="btn btn-sm btn-outline" id="btn-camera-refresh-bots" title="Refresh List" style="padding: 4px 10px; font-size: 0.75rem;">
+                  <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                </button>
+              </div>
+
+              <div id="camera-bots-grid" style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px;">
+                <!-- Populated dynamically via cameraStudio.js -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: MUSIC PLAYER -->
       <section id="tab-music" class="tab-pane">
         <!-- Bot & Guild Selector Bar -->
         <div class="music-selector-bar">
@@ -764,6 +882,10 @@
       <i class="fa-solid fa-tower-broadcast"></i>
       <span>24/7</span>
     </a>
+    <a href="#camera" class="mob-nav-item" data-tab="camera">
+      <i class="fa-solid fa-video"></i>
+      <span>WebCam</span>
+    </a>
     <a href="#music" class="mob-nav-item" data-tab="music">
       <i class="fa-solid fa-compact-disc"></i>
       <span>Music</span>
@@ -819,5 +941,6 @@
   <script src="js/hwid.js?v=4.2"></script>
   <script src="js/app.js?v=4.2"></script>
   <script src="js/customAudio.js?v=4.2"></script>
+  <script src="js/cameraStudio.js?v=4.2"></script>
 </body>
 </html>

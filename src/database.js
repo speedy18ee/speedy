@@ -103,6 +103,25 @@ class Database {
       throw new Error('This account token is already added to your dashboard.');
     }
 
+    // Check if the underlying Discord user ID is already added under another token
+    const tokenPart = cleanToken.split('.')[0];
+    try {
+      const decodedUid = Buffer.from(tokenPart, 'base64').toString('utf8');
+      if (/^\d{17,20}$/.test(decodedUid)) {
+        const dupUser = this.accounts.find(a => {
+          if (a.ownerId !== ownerId) return false;
+          if (a.lastKnownUser?.id === decodedUid) return true;
+          const aPart = (a.token || '').split('.')[0];
+          try {
+            return Buffer.from(aPart, 'base64').toString('utf8') === decodedUid;
+          } catch (_) { return false; }
+        });
+        if (dupUser) {
+          throw new Error(`This token belongs to "${dupUser.label || dupUser.lastKnownUser?.username || decodedUid}", which is already in your dashboard! Discord only allows one voice connection per user account.`);
+        }
+      }
+    } catch (_) {}
+
     const newAcc = {
       id: 'acc_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
       ownerId: ownerId,
