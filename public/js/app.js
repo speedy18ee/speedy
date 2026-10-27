@@ -1254,7 +1254,9 @@ document.getElementById('btn-loop-mode')?.addEventListener('click', async () => 
     }
     if (state.activePlayer) state.activePlayer.loop = nextMode;
     const txt = document.getElementById('loop-mode-text');
-    if (txt) txt.textContent = nextMode === 'track' ? 'TRACK 🔂' : (nextMode === 'queue' ? 'QUEUE 🔁' : 'OFF');
+    if (txt) txt.textContent = nextMode === 'track' ? 'TRACK 🔂' : (nextMode === 'queue' ? 'QUEUE 🔁' : 'LOOP: OFF');
+    const pillTxt = document.getElementById('filter-loop-label');
+    if (pillTxt) pillTxt.textContent = nextMode === 'track' ? 'Loop: Track 🔂' : (nextMode === 'queue' ? 'Loop: Queue 🔁' : 'Loop: OFF');
     showToast(nextMode === 'track' ? '🔂 Loop: Single Song Repeats Forever' : (nextMode === 'queue' ? '🔁 Loop: Entire Queue Repeats' : 'Loop: OFF'), 'info');
   } catch (e) {}
 });
@@ -1386,7 +1388,11 @@ function updateNowPlayingUI(player) {
   }
 
   if (loopTxt && player.loop) {
-    loopTxt.textContent = player.loop.toUpperCase();
+    loopTxt.textContent = player.loop === 'track' ? 'TRACK 🔂' : (player.loop === 'queue' ? 'QUEUE 🔁' : 'LOOP: OFF');
+  }
+  const pillTxt = document.getElementById('filter-loop-label');
+  if (pillTxt && player.loop) {
+    pillTxt.textContent = player.loop === 'track' ? 'Loop: Track 🔂' : (player.loop === 'queue' ? 'Loop: Queue 🔁' : 'Loop: OFF');
   }
 
   updatePlayPauseButton();

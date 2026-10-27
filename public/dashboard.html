@@ -568,9 +568,9 @@
 
                 <!-- Playback Controls -->
                 <div class="player-controls">
-                  <button class="control-btn" id="btn-loop-mode" title="Toggle Loop (Off / Track / Queue)">
-                    <i class="fa-solid fa-repeat"></i>
-                    <span class="loop-indicator" id="loop-mode-text">Off</span>
+                  <button class="control-btn" id="btn-loop-mode" title="Click to toggle Loop (OFF / TRACK / QUEUE)" style="min-width: 72px; padding: 6px 10px; border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.5); background: rgba(168, 85, 247, 0.15);">
+                    <i class="fa-solid fa-repeat" style="color: #c084fc;"></i>
+                    <span class="loop-indicator" id="loop-mode-text" style="font-size: 0.72rem; font-weight: 800; color: #ffffff;">LOOP: OFF</span>
                   </button>
                   <button class="control-btn play-main" id="btn-play-pause">
                     <i class="fa-solid fa-play" id="icon-play-pause"></i>
@@ -594,6 +594,9 @@
                   </div>
 
                   <div class="filter-toggles">
+                    <button class="filter-pill" id="filter-loop-toggle" type="button" onclick="document.getElementById('btn-loop-mode')?.click()" title="Toggle Repeat Loop: Track / Queue / Off" style="border: 1px solid rgba(168, 85, 247, 0.6); color: #c084fc; font-weight: 700; background: rgba(168, 85, 247, 0.15);">
+                      <i class="fa-solid fa-repeat"></i> <span id="filter-loop-label">Loop: OFF</span>
+                    </button>
                     <button class="filter-pill filter-bass-pill" id="filter-bassboost" data-filter="bassboost" title="Deep 60Hz Sub-Bass Punch Boost">
                       <i class="fa-solid fa-drum"></i> Bass Boost
                     </button>

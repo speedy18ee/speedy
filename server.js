@@ -267,6 +267,7 @@ botManager.on('botVoice', data => {
 app.use('/api/accounts', requireAuth);
 app.use('/api/music', requireAuth);
 app.use('/api/actions', requireAuth);
+app.use('/api/guilds', requireAuth);
 
 // 1. Accounts API (Strictly Partitioned by User Credentials)
 app.get('/api/accounts', (req, res) => {
