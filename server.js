@@ -314,6 +314,131 @@ app.post('/api/accounts', async (req, res) => {
   }
 });
 
+// Mass Token Import / Token Manager (Paste all tokens at once)
+app.post('/api/accounts/mass', async (req, res) => {
+  try {
+    const { tokens, autoStart = true } = req.body;
+    if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({ success: false, error: 'Tokens array is required' });
+    }
+
+    const maxLimit = (req.user && typeof req.user.botLimit === 'number') ? req.user.botLimit : 10;
+    const currentAccounts = database.getAccounts(req.user.userId);
+    const availableSlots = Math.max(0, maxLimit - currentAccounts.length);
+
+    if (availableSlots <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Bot limit reached! Your credentials allow a maximum of ${maxLimit} bots (Currently using: ${currentAccounts.length}/${maxLimit}).`
+      });
+    }
+
+    const added = [];
+    const skipped = [];
+    const errors = [];
+
+    const existingTokens = new Set(currentAccounts.map(a => a.token.trim()));
+    const existingUserIds = new Set();
+    currentAccounts.forEach(a => {
+      try {
+        const payload = a.token.split('.')[0];
+        const uid = Buffer.from(payload, 'base64').toString('utf8');
+        if (/^\d{17,20}$/.test(uid)) existingUserIds.add(uid);
+      } catch (e) {}
+    });
+
+    const seenInBatch = new Set();
+
+    for (let i = 0; i < tokens.length; i++) {
+      if (added.length >= availableSlots) {
+        skipped.push({ token: tokens[i], reason: `Quota limit (${maxLimit}) reached` });
+        continue;
+      }
+
+      const rawToken = typeof tokens[i] === 'string' ? tokens[i].trim() : (tokens[i]?.token || '').trim();
+      if (!rawToken || rawToken.length < 25) continue;
+
+      const tokenParts = rawToken.split('.');
+      if (tokenParts.length < 3) {
+        errors.push({ token: rawToken, reason: 'Invalid token format (must have 3 parts separated by dots)' });
+        continue;
+      }
+
+      let tokenUid = null;
+      try {
+        const decoded = Buffer.from(tokenParts[0], 'base64').toString('utf8');
+        if (/^\d{17,20}$/.test(decoded)) tokenUid = decoded;
+      } catch (e) {}
+
+      if (tokenUid && (existingUserIds.has(tokenUid) || seenInBatch.has(tokenUid))) {
+        skipped.push({ token: rawToken, reason: `Account already added (Discord User ID: ${tokenUid})` });
+        continue;
+      }
+
+      if (existingTokens.has(rawToken) || seenInBatch.has(rawToken)) {
+        skipped.push({ token: rawToken, reason: 'Duplicate token' });
+        continue;
+      }
+
+      if (tokenUid) seenInBatch.add(tokenUid);
+      seenInBatch.add(rawToken);
+
+      try {
+        const defaultLabel = `Bot ${currentAccounts.length + added.length + 1}`;
+        const label = (typeof tokens[i] === 'object' && tokens[i]?.label) ? tokens[i].label : defaultLabel;
+        const newAcc = database.addAccount({
+          token: rawToken,
+          label,
+          proxy: null,
+          autoStart: autoStart !== false,
+          ownerId: req.user.userId,
+          ownerUsername: req.user.username
+        });
+
+        existingTokens.add(rawToken);
+        if (tokenUid) existingUserIds.add(tokenUid);
+        added.push(newAcc);
+
+        if (newAcc.autoStart !== false) {
+          const delay = added.length * 1500;
+          setTimeout(() => {
+            botManager.startAccount(newAcc.id).catch(e => {
+              logger.error('BOT', `Mass initial start failed: ${e.message}`);
+            });
+          }, delay);
+        }
+      } catch (err) {
+        errors.push({ token: rawToken, reason: err.message });
+      }
+    }
+
+    logger.success('DASHBOARD', `User [${req.user.username}] mass-added ${added.length} accounts (${skipped.length} skipped, ${errors.length} errors)`);
+
+    res.json({
+      success: true,
+      addedCount: added.length,
+      skippedCount: skipped.length,
+      errorCount: errors.length,
+      added,
+      skipped,
+      errors
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get all saved tokens for this user (for Token Manager Load)
+app.get('/api/accounts/tokens', (req, res) => {
+  try {
+    const accounts = database.getAccounts(req.user.userId);
+    const tokens = accounts.map(a => a.token).filter(Boolean);
+    res.json({ success: true, count: tokens.length, tokens });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.delete('/api/accounts/:id', async (req, res) => {
   try {
     const { id } = req.params;

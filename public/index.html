@@ -120,6 +120,9 @@
           <button class="btn btn-outline" type="button" onclick="openMassVoiceTab()" title="Mass Voice: Connect all bots to VC" style="border-color: rgba(168, 85, 247, 0.45); color: #c084fc;">
             <i class="fa-solid fa-users-rays"></i> All to VC
           </button>
+          <button class="btn btn-outline" type="button" onclick="openTokenManagerModal()" title="Mass Token Manager: Paste all tokens in 1 way" style="border-color: #fbbf24; color: #fbbf24; font-weight: 700;">
+            <i class="fa-solid fa-key"></i> Token Manager
+          </button>
           <button class="btn btn-primary" id="btn-open-add-bot">
             <i class="fa-solid fa-plus"></i> Add Account
           </button>
@@ -209,6 +212,9 @@
             <div class="badge" id="badge-accounts-quota" style="padding: 9px 14px; font-size: 0.85rem; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.35); color: #c084fc; font-weight: 700; white-space: nowrap;">
               <i class="fa-solid fa-robot"></i> Plan Quota: <span id="lbl-quota-counter">0 / 10 Bots</span>
             </div>
+            <button class="btn btn-outline" type="button" onclick="openTokenManagerModal()" title="Mass Token Manager: Paste all tokens in 1 way" style="border-color: #fbbf24; color: #fbbf24; font-weight: 700;">
+              <i class="fa-solid fa-key"></i> Mass Token Manager
+            </button>
             <button class="btn btn-primary" id="btn-add-account-tab" onclick="openAddAccountModal()">
               <i class="fa-solid fa-user-plus"></i> Add Account with Token
             </button>
@@ -844,6 +850,14 @@
       <div class="modal-body">
         <p class="modal-desc">Paste your Discord account user token below. The token will be safely stored locally on your machine and logged in directly without .env!</p>
 
+        <!-- Quick Switch to Mass Token Manager Banner -->
+        <div style="margin-bottom: 14px; padding: 10px 14px; border-radius: 10px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <span style="font-size: 0.8rem; color: #fde68a;"><i class="fa-solid fa-layer-group" style="color: #fbbf24;"></i> Have multiple tokens? Add all at once in 1 click:</span>
+          <button type="button" class="btn btn-sm" onclick="closeAddAccountModal(); openTokenManagerModal();" style="padding: 4px 10px; font-size: 0.78rem; background: #fbbf24; color: #000; font-weight: 800; border-radius: 8px; border: none; cursor: pointer; white-space: nowrap;">
+            🔑 Token Manager
+          </button>
+        </div>
+
         <!-- Account Quota Warning & Status Banner -->
         <div id="modal-quota-banner" style="margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: rgba(168, 85, 247, 0.12); border: 1px solid rgba(168, 85, 247, 0.35); display: flex; justify-content: space-between; align-items: center;">
           <span style="font-size: 0.85rem; color: #e4e4e7;"><i class="fa-solid fa-robot" style="color: #a855f7;"></i> Allowed Account Quota:</span>
@@ -881,6 +895,61 @@
           <i class="fa-solid fa-plus"></i> Connect Account
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TOKEN MANAGER (MASS TOKEN IMPORTER MATCHING SCREENSHOT) -->
+  <div class="modal-overlay" id="modal-token-manager" style="display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="modal-box token-manager-card" style="width: 100%; max-width: 520px; background: rgba(18, 19, 31, 0.96); border: 1px solid rgba(168, 85, 247, 0.35); box-shadow: 0 0 50px rgba(168, 85, 247, 0.25); border-radius: 24px; padding: 24px; position: relative; backdrop-filter: blur(20px);">
+      
+      <!-- Top Glowing Star Accent -->
+      <div style="text-align: center; margin-top: -6px; margin-bottom: 6px;">
+        <span style="color: #c084fc; font-size: 1.1rem; filter: drop-shadow(0 0 8px #a855f7);">✦</span>
+        <div style="width: 80px; height: 2px; background: linear-gradient(90deg, transparent, #a855f7, transparent); margin: 4px auto 14px;"></div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-key" style="color: #fbbf24; font-size: 1.1rem;"></i>
+          <h3 style="font-size: 0.95rem; font-weight: 800; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; margin: 0;">TOKEN MANAGER</h3>
+        </div>
+        <button class="modal-close" onclick="closeTokenManagerModal()" style="background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+
+      <div style="margin-bottom: 14px;">
+        <textarea id="token-manager-textarea" 
+                  class="font-mono" 
+                  placeholder="Paste all your Discord tokens here...&#10;One token per line:&#10;&#10;MTUyMjkx...&#10;MTUyMjk0...&#10;MTUwMTMx..." 
+                  rows="7"
+                  oninput="updateTokenManagerCounters()"
+                  style="width: 100%; padding: 14px; background: #0c0d16; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; color: #ffffff; font-size: 0.82rem; line-height: 1.5; resize: vertical; outline: none; font-family: var(--font-mono); word-break: break-all;"></textarea>
+      </div>
+
+      <!-- Live Counters Row -->
+      <div style="display: flex; gap: 10px; margin-bottom: 18px; align-items: center; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 10px; font-size: 0.82rem; color: #cbd5e1; font-weight: 600;">
+          <span>📊</span> Tokens: <span id="tm-tokens-count" style="color: #c084fc; font-weight: 800; margin-left: 2px;">0</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.35); border-radius: 10px; font-size: 0.82rem; color: #cbd5e1; font-weight: 600;">
+          <span>✅</span> Valid: <span id="tm-valid-count" style="color: #22c55e; font-weight: 800; margin-left: 2px;">0</span>
+        </div>
+        <div style="margin-left: auto; font-size: 0.78rem; color: #a1a1aa;" id="tm-quota-hint">
+          Plan Quota: <span id="tm-quota-text" style="color: #c084fc; font-weight: 700;">0/10</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons Matching User Screenshot -->
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button type="button" id="btn-tm-save" onclick="submitMassTokens()" style="width: 100%; padding: 13px; font-weight: 800; font-size: 0.95rem; border-radius: 14px; background: #fbbf24; color: #0f172a; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 15px rgba(251, 191, 36, 0.3); transition: transform 0.1s ease, filter 0.2s ease;">
+          <span style="font-size: 1.1rem;">💾</span> Save Tokens
+        </button>
+
+        <button type="button" id="btn-tm-load" onclick="loadSavedTokensIntoManager()" style="width: 100%; padding: 13px; font-weight: 700; font-size: 0.95rem; border-radius: 14px; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: #ffffff; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3); transition: transform 0.1s ease, filter 0.2s ease;">
+          <span style="font-size: 1.1rem;">📁</span> Load Saved
+        </button>
+      </div>
+
+      <div id="tm-status-msg" style="display: none; margin-top: 14px; padding: 10px 14px; border-radius: 10px; font-size: 0.82rem; line-height: 1.4;"></div>
     </div>
   </div>
 

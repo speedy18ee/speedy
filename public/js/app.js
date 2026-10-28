@@ -2151,6 +2151,169 @@ async function submitPermanentServerLeave() {
 window.loadGuildsForLeave = loadGuildsForLeave;
 window.submitPermanentServerLeave = submitPermanentServerLeave;
 
+// --- TOKEN MANAGER (MASS TOKEN MODAL MATCHING USER SCREENSHOT) ---
+function openTokenManagerModal() {
+  const modal = document.getElementById('modal-token-manager');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  const textarea = document.getElementById('token-manager-textarea');
+  if (textarea) {
+    textarea.focus();
+    updateTokenManagerCounters();
+  }
+  const quotaText = document.getElementById('tm-quota-text');
+  if (quotaText && state.accounts) {
+    const limit = state.botLimit || (state.currentUser && state.currentUser.botLimit) || 10;
+    quotaText.textContent = `${state.accounts.length}/${limit}`;
+  }
+}
+
+function closeTokenManagerModal() {
+  const modal = document.getElementById('modal-token-manager');
+  if (modal) modal.style.display = 'none';
+  const msg = document.getElementById('tm-status-msg');
+  if (msg) msg.style.display = 'none';
+}
+
+function parseTokensFromText(text) {
+  if (!text) return [];
+  return text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !line.startsWith('#'));
+}
+
+function updateTokenManagerCounters() {
+  const textarea = document.getElementById('token-manager-textarea');
+  const tokensCountEl = document.getElementById('tm-tokens-count');
+  const validCountEl = document.getElementById('tm-valid-count');
+  if (!textarea || !tokensCountEl || !validCountEl) return;
+
+  const rawTokens = parseTokensFromText(textarea.value);
+  tokensCountEl.textContent = rawTokens.length;
+
+  let valid = 0;
+  for (const t of rawTokens) {
+    const parts = t.split('.');
+    if (parts.length >= 3 && t.length >= 45) {
+      valid++;
+    }
+  }
+  validCountEl.textContent = valid;
+}
+
+async function loadSavedTokensIntoManager() {
+  const btn = document.getElementById('btn-tm-load');
+  const textarea = document.getElementById('token-manager-textarea');
+  const msg = document.getElementById('tm-status-msg');
+
+  if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading Saved...';
+
+  try {
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch('/api/accounts/tokens', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load tokens');
+
+    const tokensList = data.tokens || [];
+    if (textarea) {
+      textarea.value = tokensList.join('\n');
+      updateTokenManagerCounters();
+    }
+
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.background = 'rgba(168, 85, 247, 0.15)';
+      msg.style.border = '1px solid rgba(168, 85, 247, 0.35)';
+      msg.style.color = '#c084fc';
+      msg.textContent = `Loaded ${tokensList.length} saved token(s) into editor!`;
+    }
+    if (window.showToast) showToast(`Loaded ${tokensList.length} saved token(s)!`, 'info');
+  } catch (err) {
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.background = 'rgba(239, 68, 68, 0.15)';
+      msg.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+      msg.style.color = '#fca5a5';
+      msg.textContent = `Error: ${err.message}`;
+    }
+  } finally {
+    if (btn) btn.innerHTML = '<span style="font-size: 1.1rem;">📁</span> Load Saved';
+  }
+}
+
+async function submitMassTokens() {
+  const textarea = document.getElementById('token-manager-textarea');
+  const btn = document.getElementById('btn-tm-save');
+  const msg = document.getElementById('tm-status-msg');
+
+  const rawTokens = parseTokensFromText(textarea?.value || '');
+  if (rawTokens.length === 0) {
+    if (window.showToast) showToast('Please paste at least one Discord token in the box!', 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving & Connecting...';
+  }
+
+  try {
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch('/api/accounts/mass', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ tokens: rawTokens, autoStart: true })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to save tokens');
+    }
+
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.background = 'rgba(34, 197, 94, 0.15)';
+      msg.style.border = '1px solid rgba(34, 197, 94, 0.35)';
+      msg.style.color = '#86efac';
+      msg.innerHTML = `<b>Success!</b> Added <b>${data.addedCount}</b> token(s). ${data.skippedCount ? `(${data.skippedCount} skipped as duplicate/limit)` : ''}`;
+    }
+
+    if (window.showToast) showToast(`✅ Added ${data.addedCount} selfbot token(s)! Auto-connecting now...`, 'success');
+
+    if (typeof loadAccounts === 'function') loadAccounts();
+
+    setTimeout(() => {
+      closeTokenManagerModal();
+    }, 1800);
+  } catch (err) {
+    if (msg) {
+      msg.style.display = 'block';
+      msg.style.background = 'rgba(239, 68, 68, 0.15)';
+      msg.style.border = '1px solid rgba(239, 68, 68, 0.35)';
+      msg.style.color = '#fca5a5';
+      msg.textContent = `Error: ${err.message}`;
+    }
+    if (window.showToast) showToast(`Mass add error: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span style="font-size: 1.1rem;">💾</span> Save Tokens';
+    }
+  }
+}
+
+window.openTokenManagerModal = openTokenManagerModal;
+window.closeTokenManagerModal = closeTokenManagerModal;
+window.updateTokenManagerCounters = updateTokenManagerCounters;
+window.loadSavedTokensIntoManager = loadSavedTokensIntoManager;
+window.submitMassTokens = submitMassTokens;
+
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
   checkUserAuth();
