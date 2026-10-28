@@ -565,7 +565,7 @@ class BotManager extends EventEmitter {
         channel_id: channelId,
         self_mute: selfMute,
         self_deaf: selfDeaf,
-        self_video: !!options.selfVideo
+        self_video: false
       }
     });
 
@@ -628,52 +628,13 @@ class BotManager extends EventEmitter {
     this.emit("botVoice", { accountId, currentVoice: null });
   }
 
-  // --- Toggle / Set Camera (Discord Video) for an Account ---
-  async setCamera(accountId, enabled = true) {
-    const botEntry = this.bots.get(accountId);
-    if (!botEntry || !botEntry.client || botEntry.status !== "online") {
-      throw new Error("Bot is not online");
-    }
-    if (!botEntry.currentVoice?.channelId) {
-      throw new Error("Bot is not connected to a voice channel");
-    }
-
-    const { guildId, channelId, selfMute, selfDeaf } = botEntry.currentVoice;
-    const shard = botEntry.client.ws.shards.first();
-    if (!shard) throw new Error("No active gateway shard available");
-
-    shard.send({
-      op: 4,
-      d: {
-        guild_id: guildId,
-        channel_id: channelId,
-        self_mute: !!selfMute,
-        self_deaf: !!selfDeaf,
-        self_video: !!enabled
-      }
-    });
-
-    botEntry.currentVoice.selfVideo = !!enabled;
-    logger.voice("CAMERA", `Account [${botEntry.account.label}] Discord Camera turned ${enabled ? 'ON' : 'OFF'} in channel ${channelId}`);
-    this.emit("botVoice", { accountId, currentVoice: botEntry.currentVoice });
-    return botEntry.currentVoice;
+  // Camera feature disabled
+  async setCamera(accountId, enabled = false) {
+    return { success: true, disabled: true };
   }
 
-  // --- Toggle / Set Camera for ALL Accounts of a User ---
-  async setAllCamera(userId = null, enabled = true) {
-    const accounts = database.getAccounts(userId);
-    let updated = 0;
-    for (const acc of accounts) {
-      const b = this.bots.get(acc.id);
-      if (b && b.status === "online" && b.currentVoice?.channelId) {
-        try {
-          await this.setCamera(acc.id, enabled);
-          updated++;
-        } catch (e) {}
-      }
-    }
-    logger.voice("CAMERA", `Mass camera toggled: ${enabled ? 'ON' : 'OFF'} across ${updated} bots.`);
-    return { success: true, count: updated, selfVideo: !!enabled };
+  async setAllCamera(userId = null, enabled = false) {
+    return { success: true, count: 0, disabled: true };
   }
 
   // --- Configure 24/7 Stay ---

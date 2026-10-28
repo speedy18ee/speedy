@@ -17,6 +17,12 @@
   </script>
 </head>
 <body class="dark-theme">
+  <!-- Animated Background GIF Layer -->
+  <div id="bg-gif-layer" class="bg-gif-backdrop"></div>
+  <!-- Interactive 3D Canvas Model Layer -->
+  <canvas id="bg-canvas-3d" class="bg-canvas-3d-model"></canvas>
+  <!-- Cyber Scanline Overlay -->
+  <div class="cyber-scanlines"></div>
   <!-- Noise & Ambient Glow Background -->
   <div class="ambient-glow glow-1"></div>
   <div class="ambient-glow glow-2"></div>
@@ -38,6 +44,7 @@
       <button class="btn btn-sm btn-primary" onclick="openAddAccountModal()" title="Add Account" style="border-radius: 8px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center;">
         <i class="fa-solid fa-plus"></i>
       </button>
+      <button class="btn btn-sm btn-outline btn-quick-theme" onclick="switchTab('settings')" title="3D & Theme Studio" style="border-radius: 8px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center; border-color: rgba(168,85,247,0.4); color: #c084fc;"><i class="fa-solid fa-cube"></i></button>
       <button class="btn btn-sm btn-outline btn-danger-outline" onclick="logoutEXC()" title="Logout" style="border-radius: 8px; width: 34px; height: 34px; padding: 0; display: flex; align-items: center; justify-content: center;">
         <i class="fa-solid fa-power-off"></i>
       </button>
@@ -68,11 +75,6 @@
         <a href="#voice" class="nav-item" data-tab="voice">
           <i class="fa-solid fa-tower-broadcast"></i>
           <span>24/7 Voice Stay</span>
-        </a>
-        <a href="#camera" class="nav-item" data-tab="camera">
-          <i class="fa-solid fa-video"></i>
-          <span>WebCam Studio</span>
-          <span class="badge-count" id="badge-camera-live" style="display:none; background:#22c55e;">LIVE</span>
         </a>
         <a href="#music" class="nav-item" data-tab="music">
           <i class="fa-solid fa-compact-disc"></i>
@@ -365,119 +367,6 @@
 
         <div class="voice-manager-container" id="voice-manager-cards">
           <!-- Dynamically populated per account -->
-        </div>
-      </section>
-
-      <!-- TAB 4: WEBCAM & DISCORD VIDEO STUDIO -->
-      <section id="tab-camera" class="tab-pane">
-        <div class="camera-studio-layout">
-          <!-- Left Column: Camera Viewport -->
-          <div class="card" style="border: 1px solid rgba(168, 85, 247, 0.4); background: linear-gradient(180deg, rgba(20, 15, 30, 0.85) 0%, rgba(10, 10, 16, 0.95) 100%); border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); display: flex; align-items: center; justify-content: center; color: #22c55e;">
-                  <i class="fa-solid fa-video"></i>
-                </div>
-                <div>
-                  <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Live WebCam Stream</h3>
-                  <p style="font-size: 0.76rem; color: #a1a1aa;">Capture browser camera feed to broadcast to Discord voice channels</p>
-                </div>
-              </div>
-              <div style="display: flex; gap: 8px;">
-                <span class="badge badge-warning" id="webcam-status-badge">
-                  <i class="fa-solid fa-circle" style="color: #eab308; font-size: 0.6rem;"></i> STANDBY
-                </span>
-                <span class="badge" id="webcam-res-badge" style="background: rgba(255,255,255,0.08); color: #cbd5e1; font-size: 0.72rem;">
-                  HD 720p
-                </span>
-              </div>
-            </div>
-
-            <!-- Video Viewport -->
-            <div style="position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 40px rgba(0,0,0,0.8);">
-              <video id="webcam-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
-
-              <div id="webcam-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #71717a; padding: 20px;">
-                <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; margin-bottom: 12px; font-size: 1.6rem; color: #a1a1aa;">
-                  <i class="fa-solid fa-camera"></i>
-                </div>
-                <h4 style="color: #ffffff; font-size: 0.95rem; margin-bottom: 4px;">Camera is Idle</h4>
-                <p style="font-size: 0.78rem; max-width: 280px; color: #a1a1aa;">Click "Start WebCam" below to grant camera access and activate your live video feed</p>
-              </div>
-
-              <!-- Live Audio VU bar along bottom edge of video -->
-              <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: rgba(0,0,0,0.6);">
-                <div id="webcam-vu-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e 0%, #a855f7 70%, #ef4444 100%); transition: width 0.05s ease;"></div>
-              </div>
-            </div>
-
-            <!-- WebCam Action Controls -->
-            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; justify-content: space-between; align-items: center;">
-              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button class="btn btn-primary" id="btn-camera-toggle-webcam">
-                  <i class="fa-solid fa-video"></i> Start WebCam
-                </button>
-                <button class="btn btn-outline" id="btn-camera-flip" title="Switch Front/Back Camera">
-                  <i class="fa-solid fa-camera-rotate"></i> Flip Camera
-                </button>
-              </div>
-            </div>
-
-            <!-- Video Filters Preset Bar -->
-            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.07);">
-              <label style="font-size: 0.76rem; color: #a1a1aa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">
-                <i class="fa-solid fa-wand-magic-sparkles" style="color: #c084fc;"></i> Studio Video Filters
-              </label>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button type="button" class="btn btn-sm btn-outline cam-filter-btn active" data-filter="none" style="font-size: 0.75rem; padding: 5px 10px;">Normal</button>
-                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="glow" style="font-size: 0.75rem; padding: 5px 10px;">✨ AMOLED Glow</button>
-                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="cyberpunk" style="font-size: 0.75rem; padding: 5px 10px;">💜 Cyberpunk</button>
-                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="matrix" style="font-size: 0.75rem; padding: 5px 10px;">🟢 Matrix</button>
-                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="noir" style="font-size: 0.75rem; padding: 5px 10px;">🖤 Noir Film</button>
-                <button type="button" class="btn btn-sm btn-outline cam-filter-btn" data-filter="vintage" style="font-size: 0.75rem; padding: 5px 10px;">🎞 Vintage</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Right Column: Discord Bot Video Control & Streaming Status -->
-          <div style="display: flex; flex-direction: column; gap: 16px;">
-            <!-- Broadcast Card -->
-            <div class="card" style="border: 1px solid rgba(34, 197, 94, 0.4); background: linear-gradient(180deg, rgba(16, 28, 20, 0.85) 0%, rgba(10, 16, 12, 0.95) 100%); border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 20px rgba(34, 197, 94, 0.1);">
-              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); display: flex; align-items: center; justify-content: center; color: #22c55e;">
-                  <i class="fa-solid fa-satellite-dish"></i>
-                </div>
-                <div>
-                  <h3 style="font-size: 1.05rem; font-weight: 700; color: #fff;">Discord Video Broadcast</h3>
-                  <p style="font-size: 0.76rem; color: #a1a1aa;">Stream camera video status directly to Discord Gateway (Opcode 4)</p>
-                </div>
-              </div>
-
-              <p style="font-size: 0.82rem; color: #cbd5e1; margin-bottom: 16px; line-height: 1.45;">
-                When broadcast is activated, all bots currently inside voice channels will display the <b style="color: #22c55e;">Green Discord Camera Icon</b> and live video feed inside their voice channels.
-              </p>
-
-              <button class="btn btn-primary" id="btn-camera-broadcast-all" style="width: 100%; padding: 14px; font-weight: 700; font-size: 0.95rem; justify-content: center;">
-                <i class="fa-solid fa-satellite-dish"></i> Broadcast Camera to All Bots (Discord Video)
-              </button>
-            </div>
-
-            <!-- Per-Bot Video Stream Controls -->
-            <div class="card" style="border: 1px solid rgba(255, 255, 255, 0.08); background: #0c0c12; border-radius: 20px; padding: 20px; flex: 1;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-                <h4 style="font-size: 0.92rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
-                  <i class="fa-solid fa-users" style="color: #a855f7;"></i> Voice Bots Video Status
-                </h4>
-                <button class="btn btn-sm btn-outline" id="btn-camera-refresh-bots" title="Refresh List" style="padding: 4px 10px; font-size: 0.75rem;">
-                  <i class="fa-solid fa-arrows-rotate"></i> Refresh
-                </button>
-              </div>
-
-              <div id="camera-bots-grid" style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px;">
-                <!-- Populated dynamically via cameraStudio.js -->
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -835,7 +724,157 @@
               </div>
             </div>
           </div>
-        </div>
+        
+          <!-- 3D MODELS & BACKGROUND GIF STUDIO -->
+          <div class="glass-panel" style="margin-top: 18px; border: 1px solid rgba(168, 85, 247, 0.35);">
+            <div class="panel-header" style="display: flex; align-items: center; justify-content: space-between;">
+              <h2 style="font-size: 1.1rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-cube" style="color: #a855f7;"></i> 3D Models & Background GIF Studio
+              </h2>
+              <span class="badge" style="background: rgba(168, 85, 247, 0.18); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4);">
+                ✦ 60 FPS Canvas 3D
+              </span>
+            </div>
+
+            <div class="settings-form" style="display: flex; flex-direction: column; gap: 16px;">
+              <!-- Display Mode Selector -->
+              <div class="form-group">
+                <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-layer-group" style="color: #38bdf8;"></i> Background Display Mode
+                </label>
+                <div class="theme-preset-grid" style="grid-template-columns: repeat(4, 1fr);" id="theme-bgmode-grid">
+                  <div class="theme-card-option active" data-mode="hybrid" onclick="selectBgMode('hybrid')">
+                    <i class="fa-solid fa-wand-magic-sparkles" style="color: #a855f7; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Hybrid (3D + GIF)</span>
+                  </div>
+                  <div class="theme-card-option" data-mode="3d" onclick="selectBgMode('3d')">
+                    <i class="fa-solid fa-cube" style="color: #38bdf8; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">3D Canvas Model</span>
+                  </div>
+                  <div class="theme-card-option" data-mode="gif" onclick="selectBgMode('gif')">
+                    <i class="fa-solid fa-image" style="color: #ec4899; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Animated GIF</span>
+                  </div>
+                  <div class="theme-card-option" data-mode="dark" onclick="selectBgMode('dark')">
+                    <i class="fa-solid fa-moon" style="color: #cbd5e1; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">AMOLED Dark</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3D Model Preset Selector -->
+              <div class="form-group">
+                <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-shapes" style="color: #a855f7;"></i> Select 3D Model (Interactive Perspective Canvas)
+                </label>
+                <div class="theme-preset-grid" id="theme-model-grid">
+                  <div class="theme-card-option active" data-model="icosahedron" onclick="select3DModel('icosahedron')">
+                    <i class="fa-solid fa-gem" style="color: #a855f7; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Cyber Icosahedron</span>
+                  </div>
+                  <div class="theme-card-option" data-model="tesseract" onclick="select3DModel('tesseract')">
+                    <i class="fa-solid fa-cubes" style="color: #38bdf8; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Quantum Tesseract</span>
+                  </div>
+                  <div class="theme-card-option" data-model="constellation" onclick="select3DModel('constellation')">
+                    <i class="fa-solid fa-circle-nodes" style="color: #10b981; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Neural Constellation</span>
+                  </div>
+                  <div class="theme-card-option" data-model="gyroscope" onclick="select3DModel('gyroscope')">
+                    <i class="fa-solid fa-atom" style="color: #fbbf24; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Orbital Gyroscope</span>
+                  </div>
+                  <div class="theme-card-option" data-model="off" onclick="select3DModel('off')">
+                    <i class="fa-solid fa-eye-slash" style="color: #71717a; font-size: 1.2rem;"></i>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Model Off</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3D Model Wireframe Color -->
+              <div class="form-group">
+                <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-palette" style="color: #fbbf24;"></i> 3D Neon Wireframe Glow Color
+                </label>
+                <div style="display: flex; gap: 10px; align-items: center; margin-top: 6px;" id="theme-color-palette">
+                  <div class="theme-color-pill active" style="background: #a855f7;" title="Cyber Purple" onclick="selectModelColor('#a855f7', this)"></div>
+                  <div class="theme-color-pill" style="background: #06b6d4;" title="Neon Cyan" onclick="selectModelColor('#06b6d4', this)"></div>
+                  <div class="theme-color-pill" style="background: #fbbf24;" title="Gold Amber" onclick="selectModelColor('#fbbf24', this)"></div>
+                  <div class="theme-color-pill" style="background: #10b981;" title="Matrix Emerald" onclick="selectModelColor('#10b981', this)"></div>
+                  <div class="theme-color-pill" style="background: #ef4444;" title="Crimson Red" onclick="selectModelColor('#ef4444', this)"></div>
+                  <div class="theme-color-pill" style="background: #ec4899;" title="Synthwave Pink" onclick="selectModelColor('#ec4899', this)"></div>
+                </div>
+              </div>
+
+              <!-- 3D Rotation Speed Slider -->
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1;"><i class="fa-solid fa-gauge"></i> 3D Rotation Speed</label>
+                  <span id="lbl-3d-speed" style="font-size: 0.78rem; font-weight: 700; color: #a855f7;">1.0x</span>
+                </div>
+                <input type="range" id="rng-3d-speed" min="0.2" max="3.0" step="0.1" value="1.0" class="form-range" oninput="update3DSpeed(this.value)" style="width: 100%; accent-color: #a855f7;">
+              </div>
+
+              <!-- Background GIF Presets -->
+              <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px;">
+                <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-film" style="color: #ec4899;"></i> Animated Background GIF Presets
+                </label>
+                <div class="theme-preset-grid" id="theme-gif-grid">
+                  <div class="theme-card-option active" data-gif="cyberpunk" onclick="selectGifPreset('cyberpunk')">
+                    <span style="font-size: 1.1rem;">🏙️</span>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Cyber Neon City</span>
+                  </div>
+                  <div class="theme-card-option" data-gif="nebula" onclick="selectGifPreset('nebula')">
+                    <span style="font-size: 1.1rem;">🌌</span>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Deep Nebula</span>
+                  </div>
+                  <div class="theme-card-option" data-gif="matrix" onclick="selectGifPreset('matrix')">
+                    <span style="font-size: 1.1rem;">⚡</span>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Synth Matrix</span>
+                  </div>
+                  <div class="theme-card-option" data-gif="lofi" onclick="selectGifPreset('lofi')">
+                    <span style="font-size: 1.1rem;">🌧️</span>
+                    <span style="font-size: 0.78rem; font-weight: 700;">Lo-Fi Violet Rain</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Custom Background GIF URL Input -->
+              <div class="form-group">
+                <label style="font-size: 0.85rem; font-weight: 600; color: #cbd5e1; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-link" style="color: #38bdf8;"></i> Custom Animated GIF URL (Tenor, Giphy, Imgur, Discord CDN)
+                </label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="url" id="inp-custom-gif" class="form-input" placeholder="https://media.giphy.com/.../giphy.gif" style="flex: 1; font-size: 0.82rem;">
+                  <button type="button" class="btn btn-primary" onclick="applyCustomGifUrl()" style="padding: 0 16px; font-weight: 700; white-space: nowrap;">
+                    <i class="fa-solid fa-check"></i> Apply GIF
+                  </button>
+                </div>
+                <small class="form-hint" style="color: #a1a1aa; font-size: 0.72rem; margin-top: 4px;">Paste any direct .gif link to customize your background.</small>
+              </div>
+
+              <!-- GIF Opacity & Blur Sliders -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 0.82rem; font-weight: 600; color: #cbd5e1;"><i class="fa-solid fa-circle-half-stroke"></i> GIF Opacity</label>
+                    <span id="lbl-gif-opacity" style="font-size: 0.78rem; font-weight: 700; color: #c084fc;">35%</span>
+                  </div>
+                  <input type="range" id="rng-gif-opacity" min="0.05" max="0.9" step="0.05" value="0.35" class="form-range" oninput="updateGifOpacity(this.value)" style="width: 100%; accent-color: #a855f7;">
+                </div>
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 0.82rem; font-weight: 600; color: #cbd5e1;"><i class="fa-solid fa-wand-magic"></i> Backdrop Blur</label>
+                    <span id="lbl-gif-blur" style="font-size: 0.78rem; font-weight: 700; color: #38bdf8;">2px</span>
+                  </div>
+                  <input type="range" id="rng-gif-blur" min="0" max="15" step="1" value="2" class="form-range" oninput="updateGifBlur(this.value)" style="width: 100%; accent-color: #38bdf8;">
+                </div>
+              </div>
+            </div>
+          </div>
+
+</div>
       </section>
     </main>
   </div>
@@ -1016,10 +1055,6 @@
       <i class="fa-solid fa-tower-broadcast"></i>
       <span>24/7</span>
     </a>
-    <a href="#camera" class="mob-nav-item" data-tab="camera">
-      <i class="fa-solid fa-video"></i>
-      <span>WebCam</span>
-    </a>
     <a href="#music" class="mob-nav-item" data-tab="music">
       <i class="fa-solid fa-compact-disc"></i>
       <span>Music</span>
@@ -1075,6 +1110,91 @@
   <script src="js/hwid.js?v=4.2"></script>
   <script src="js/app.js?v=4.2"></script>
   <script src="js/customAudio.js?v=4.2"></script>
-  <script src="js/cameraStudio.js?v=4.2"></script>
+  <script src="js/canvas3d.js?v=5.0"></script>
+
+  <script>
+    // Theme & 3D Model Control Helpers
+    function selectBgMode(mode) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setBgMode(mode);
+        document.querySelectorAll('#theme-bgmode-grid .theme-card-option').forEach(el => {
+          el.classList.toggle('active', el.dataset.mode === mode);
+        });
+      }
+    }
+    function select3DModel(model) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setModelType(model);
+        document.querySelectorAll('#theme-model-grid .theme-card-option').forEach(el => {
+          el.classList.toggle('active', el.dataset.model === model);
+        });
+      }
+    }
+    function selectModelColor(hex, el) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setModelColor(hex);
+        document.querySelectorAll('#theme-color-palette .theme-color-pill').forEach(p => p.classList.remove('active'));
+        if (el) el.classList.add('active');
+      }
+    }
+    function update3DSpeed(val) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setRotationSpeed(val);
+        const lbl = document.getElementById('lbl-3d-speed');
+        if (lbl) lbl.textContent = parseFloat(val).toFixed(1) + 'x';
+      }
+    }
+    function selectGifPreset(preset) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setGifPreset(preset);
+        document.querySelectorAll('#theme-gif-grid .theme-card-option').forEach(el => {
+          el.classList.toggle('active', el.dataset.gif === preset);
+        });
+      }
+    }
+    function applyCustomGifUrl() {
+      const inp = document.getElementById('inp-custom-gif');
+      if (inp && inp.value.trim() && window.canvas3dEngine) {
+        window.canvas3dEngine.setCustomGifUrl(inp.value.trim());
+        document.querySelectorAll('#theme-gif-grid .theme-card-option').forEach(el => el.classList.remove('active'));
+        if (typeof showToast === 'function') showToast('Custom Background GIF Applied!', 'success');
+      }
+    }
+    function updateGifOpacity(val) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setGifOpacity(val);
+        const lbl = document.getElementById('lbl-gif-opacity');
+        if (lbl) lbl.textContent = Math.round(parseFloat(val) * 100) + '%';
+      }
+    }
+    function updateGifBlur(val) {
+      if (window.canvas3dEngine) {
+        window.canvas3dEngine.setGifBlur(val);
+        const lbl = document.getElementById('lbl-gif-blur');
+        if (lbl) lbl.textContent = val + 'px';
+      }
+    }
+
+    // Initialize UI controls from saved 3D engine config
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        if (window.canvas3dEngine && window.canvas3dEngine.config) {
+          const cfg = window.canvas3dEngine.config;
+          selectBgMode(cfg.bgMode || 'hybrid');
+          select3DModel(cfg.modelType || 'icosahedron');
+          if (cfg.gifPreset) selectGifPreset(cfg.gifPreset);
+          const inp = document.getElementById('inp-custom-gif');
+          if (inp && cfg.customGifUrl) inp.value = cfg.customGifUrl;
+          const rngSpeed = document.getElementById('rng-3d-speed');
+          if (rngSpeed) { rngSpeed.value = cfg.rotationSpeed || 1.0; update3DSpeed(rngSpeed.value); }
+          const rngOp = document.getElementById('rng-gif-opacity');
+          if (rngOp) { rngOp.value = cfg.gifOpacity || 0.35; updateGifOpacity(rngOp.value); }
+          const rngBlur = document.getElementById('rng-gif-blur');
+          if (rngBlur) { rngBlur.value = cfg.gifBlur || 2; updateGifBlur(rngBlur.value); }
+        }
+      }, 300);
+    });
+  </script>
+
 </body>
 </html>
