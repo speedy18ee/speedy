@@ -2310,3 +2310,54 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: 0 0 14px currentColor;
   transform: scale(1.18);
 }
+
+
+/* ═══ EXACT QUICK COMMANDS GRID (from dashboard & dashboard sb html) ═══ */
+.cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .cmd-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+.cmd-btn {
+  background: #1a1230;
+  border: 1px solid #2d1f4a;
+  border-radius: 10px;
+  padding: 10px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.cmd-btn:hover {
+  background: #2d1f4a;
+  border-color: #b57cff;
+  transform: translateY(-2px);
+  box-shadow: 0 0 12px rgba(181, 124, 255, 0.35);
+}
+.cmd-btn:active {
+  background: #3d2a63;
+  transform: scale(0.95);
+}
+.cmd-btn.active {
+  background: linear-gradient(135deg, rgba(124, 77, 255, 0.4), rgba(181, 124, 255, 0.4));
+  border-color: #b57cff;
+  box-shadow: 0 0 14px rgba(181, 124, 255, 0.45);
+}
+.cmd-icon {
+  font-size: 1.25rem;
+}
+.cmd-label {
+  font-size: 0.72rem;
+  color: #a688e0;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}

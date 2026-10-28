@@ -1644,6 +1644,227 @@ server.on('error', (err) => {
 });
 
 // Start Web Server
+
+// ══════════════════════════════════════════════════════════════════
+// EXACT COMMAND & VOLUME/BASS CONTROLLER (from dashboard & dashboard sb html)
+// ══════════════════════════════════════════════════════════════════
+let currentVolumeMultiplier = 100.0; // 10000% default
+let isBassboosted = true;
+let blastMode = false;
+let blastVolume = 50.0;
+let superLoudMode = false;
+let forceLoudMode = false;
+let pungiMode = false;
+let pungiIntensity = 50.0;
+let loudMode = false;
+let loopMode = false;
+let isPaused = false;
+let currentTitle = "Nothing playing";
+
+app.get('/api/status', (req, res) => {
+  const userId = req.user?.userId || null;
+  const onlineBots = botManager.getAllBotsStatus(userId).filter(b => b.status === 'online');
+  res.json({
+    isRunning: onlineBots.length > 0,
+    botCount: onlineBots.length,
+    currentTitle: currentTitle,
+    volume: Math.round(currentVolumeMultiplier * 100),
+    isPaused, loopMode, isBassboosted, blastMode, pungiMode, loudMode, superLoudMode, forceLoudMode,
+    connected: onlineBots.some(b => b.currentVoice?.channelId)
+  });
+});
+
+app.post('/api/command', async (req, res) => {
+  const { command } = req.body;
+  if (!command) return res.json({ error: 'No command' });
+
+  const userId = req.user?.userId || null;
+  const userBots = botManager.getAllBotsStatus(userId).filter(b => b.status === 'online');
+  const targetGuilds = new Set();
+  userBots.forEach(b => {
+    if (b.currentVoice?.guildId) targetGuilds.add(b.currentVoice.guildId);
+  });
+  if (targetGuilds.size === 0 && lavalink.players.size > 0) {
+    for (const [k, p] of lavalink.players.entries()) {
+      if (p.guildId && (!userId || p.ownerId === userId)) targetGuilds.add(p.guildId);
+    }
+  }
+
+  const lowerCmd = command.toLowerCase().trim();
+  let response = '';
+
+  try {
+    if (lowerCmd === 'help') {
+      response = 'Commands: play <url>, volume <1-20000>, max, blast, doubleblast, superloud, forceloud, bassboost, pungi, pungiset, loudmode, loop, pause, resume, stop, leave, status';
+    }
+    else if (lowerCmd.startsWith('play ')) {
+      const query = command.slice(5).trim();
+      if (userBots.length === 0) {
+        response = '❌ No bots online!';
+      } else {
+        const results = await lavalink.searchTracks(query);
+        if (!results.tracks || results.tracks.length === 0) {
+          response = '❌ No audio tracks found for query.';
+        } else {
+          const track = results.tracks[0];
+          currentTitle = track.info.title || query;
+          isPaused = false;
+          let played = 0;
+          for (const guildId of targetGuilds) {
+            await lavalink.playTrack(guildId, track, 'ALL_BOTS', userId);
+            played++;
+          }
+          response = `▶️ Now Playing: ${currentTitle} across ${played || userBots.length} bots`;
+        }
+      }
+    }
+    else if (lowerCmd === 'stop') {
+      for (const guildId of targetGuilds) {
+        await lavalink.stopTrack(guildId, 'ALL_BOTS', userId);
+      }
+      currentTitle = "Nothing playing";
+      isPaused = false;
+      response = '⏹️ Playback stopped';
+    }
+    else if (lowerCmd === 'pause') {
+      for (const guildId of targetGuilds) {
+        await lavalink.pause(guildId, true, 'ALL_BOTS', userId);
+      }
+      isPaused = true;
+      response = '⏸️ Paused';
+    }
+    else if (lowerCmd === 'resume') {
+      for (const guildId of targetGuilds) {
+        await lavalink.pause(guildId, false, 'ALL_BOTS', userId);
+      }
+      isPaused = false;
+      response = '▶️ Resumed';
+    }
+    else if (lowerCmd === 'leave') {
+      await botManager.leaveAllVoice(userId, false);
+      for (const guildId of targetGuilds) {
+        await lavalink.stopTrack(guildId, 'ALL_BOTS', userId);
+      }
+      currentTitle = "Nothing playing";
+      response = '👋 Disconnected all bots';
+    }
+    else if (lowerCmd.startsWith('volume ')) {
+      const vol = parseInt(command.slice(7).trim(), 10);
+      if (isNaN(vol) || vol < 1 || vol > 20000) {
+        response = '❌ Volume must be 1-20000%';
+      } else {
+        currentVolumeMultiplier = vol / 100;
+        for (const guildId of targetGuilds) {
+          await lavalink.setVolume(guildId, vol, 'ALL_BOTS', userId);
+        }
+        response = `🔊 Volume set to ${vol}%`;
+      }
+    }
+    else if (lowerCmd === 'max') {
+      currentVolumeMultiplier = 100.0;
+      for (const guildId of targetGuilds) {
+        await lavalink.setVolume(guildId, 10000, 'ALL_BOTS', userId);
+      }
+      response = '💥 MAXIMUM VOLUME (10000%)';
+    }
+    else if (lowerCmd === 'blast') {
+      blastMode = !blastMode;
+      pungiMode = false; superLoudMode = false; forceLoudMode = false;
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'blast', blastMode, 'ALL_BOTS', userId);
+        await lavalink.applyFilters(guildId, 'pungi', false, 'ALL_BOTS', userId);
+        await lavalink.applyFilters(guildId, 'superLoud', false, 'ALL_BOTS', userId);
+        await lavalink.applyFilters(guildId, 'forceLoud', false, 'ALL_BOTS', userId);
+      }
+      response = `🔥 Blast Mode ${blastMode ? 'ACTIVATED' : 'DEACTIVATED'}`;
+    }
+    else if (lowerCmd === 'doubleblast') {
+      blastMode = true; pungiMode = false; superLoudMode = false; forceLoudMode = false;
+      blastVolume = 100.0; currentVolumeMultiplier = 100.0;
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'doubleblast', true, 'ALL_BOTS', userId);
+        await lavalink.applyFilters(guildId, 'blast', true, 'ALL_BOTS', userId);
+        await lavalink.setVolume(guildId, 10000, 'ALL_BOTS', userId);
+      }
+      response = '💥💥 DOUBLE BLAST ACTIVATED!';
+    }
+    else if (lowerCmd === 'superloud') {
+      superLoudMode = !superLoudMode;
+      if (superLoudMode) { blastMode = false; pungiMode = false; forceLoudMode = false; }
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'superLoud', superLoudMode, 'ALL_BOTS', userId);
+      }
+      response = `🔊 Super Loud ${superLoudMode ? 'ACTIVATED' : 'DEACTIVATED'}`;
+    }
+    else if (lowerCmd === 'forceloud') {
+      forceLoudMode = !forceLoudMode;
+      if (forceLoudMode) { blastMode = false; pungiMode = false; superLoudMode = false; }
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'forceLoud', forceLoudMode, 'ALL_BOTS', userId);
+      }
+      response = `🔥 Force Loud ${forceLoudMode ? 'ACTIVATED' : 'DEACTIVATED'}`;
+    }
+    else if (lowerCmd === 'bassboost') {
+      isBassboosted = !isBassboosted;
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'bassboost', isBassboosted, 'ALL_BOTS', userId);
+      }
+      response = `🎵 Bassboost ${isBassboosted ? 'ENABLED' : 'DISABLED'}`;
+    }
+    else if (lowerCmd === 'pungi') {
+      pungiMode = !pungiMode;
+      blastMode = false; superLoudMode = false; forceLoudMode = false;
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'pungi', pungiMode, 'ALL_BOTS', userId);
+      }
+      response = `🐍 Pungi Mode ${pungiMode ? 'ACTIVATED' : 'DEACTIVATED'}`;
+    }
+    else if (lowerCmd.startsWith('pungiset ')) {
+      const val = parseFloat(command.slice(9).trim());
+      if (isNaN(val) || val < 1 || val > 200) {
+        response = '❌ Intensity must be 1-200';
+      } else {
+        pungiIntensity = val;
+        pungiMode = true;
+        for (const guildId of targetGuilds) {
+          await lavalink.applyFilters(guildId, 'pungi', true, 'ALL_BOTS', userId);
+        }
+        response = `🐍 Pungi intensity set to ${val}x`;
+      }
+    }
+    else if (lowerCmd === 'loudmode') {
+      loudMode = !loudMode;
+      for (const guildId of targetGuilds) {
+        await lavalink.applyFilters(guildId, 'loudMode', loudMode, 'ALL_BOTS', userId);
+      }
+      response = `🔊 Loud Mode ${loudMode ? 'ENABLED' : 'DISABLED'}`;
+    }
+    else if (lowerCmd === 'loop') {
+      loopMode = !loopMode;
+      const modeStr = loopMode ? 'track' : 'none';
+      for (const guildId of targetGuilds) {
+        lavalink.setLoop(guildId, modeStr, 'ALL_BOTS', userId);
+      }
+      response = `🔄 Loop ${loopMode ? 'ENABLED' : 'DISABLED'}`;
+    }
+    else if (lowerCmd === 'status') {
+      response = `🎵 ${currentTitle}\n📊 ${userBots.length} bots online\n🔊 ${Math.round(currentVolumeMultiplier * 100)}%\n🔄 Loop: ${loopMode ? 'ON' : 'OFF'}`;
+    }
+    else if (!isNaN(lowerCmd) && lowerCmd.length >= 10) {
+      const channelId = lowerCmd;
+      const resJoin = await botManager.joinAllToVoice(userId, channelId, { selfMute: false, selfDeaf: false });
+      response = `✅ Connected ${resJoin.count || userBots.length} bots to channel ${channelId}`;
+    }
+    else {
+      response = '❌ Unknown command. Type "help" for list.';
+    }
+  } catch (err) {
+    response = `❌ Error: ${err.message}`;
+  }
+
+  res.json({ response, currentVolume: Math.round(currentVolumeMultiplier * 100), isBassboosted, blastMode, superLoudMode, forceLoudMode, pungiMode, loudMode, loopMode });
+});
+
 server.listen(config.port, config.host, () => {
   logger.success('SERVER', `╔═════════════════════════════════════════════════════════════╗`);
   logger.success('SERVER', `║  🎵 MULTI-ACCOUNT DISCORD SELFBOT & LAVALINK DASHBOARD 🎵  ║`);

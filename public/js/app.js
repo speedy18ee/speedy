@@ -2312,3 +2312,58 @@ window.addEventListener('DOMContentLoaded', () => {
 setInterval(() => {
   fetch('/api/ping').catch(() => {});
 }, 45 * 1000);
+
+
+// ══════════════════════════════════════════════════════════════════
+// EXACT COMMAND RUNNER (from dashboard & dashboard sb html)
+// ══════════════════════════════════════════════════════════════════
+async function sendCmd(cmd) {
+  const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+  try {
+    const res = await fetch('/api/command', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ command: cmd })
+    });
+    const data = await res.json();
+    const respEl = document.getElementById('cmd-live-response');
+    if (respEl) {
+      respEl.style.display = 'block';
+      respEl.textContent = data.response || data.error || 'Command processed';
+      respEl.style.color = data.error ? '#ff5252' : '#00e676';
+      respEl.style.borderColor = data.error ? 'rgba(255,82,82,0.4)' : 'rgba(0,230,118,0.4)';
+      respEl.style.background = data.error ? 'rgba(255,82,82,0.1)' : 'rgba(0,230,118,0.1)';
+    }
+    if (data.currentVolume) {
+      const volDisplay = document.getElementById('vol-display');
+      if (volDisplay) volDisplay.textContent = data.currentVolume + '%';
+      const volSlider = document.getElementById('volume-slider');
+      if (volSlider) volSlider.value = data.currentVolume;
+    }
+    if (window.showToast) {
+      showToast(data.response || `Executed: ${cmd}`, data.error ? 'error' : 'success');
+    }
+  } catch (err) {
+    if (window.showToast) showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+async function sendCustom() {
+  const input = document.getElementById('cmd-input');
+  if (!input || !input.value.trim()) return;
+  const cmd = input.value.trim();
+  await sendCmd(cmd);
+  input.value = '';
+}
+
+function onVolumeSliderChange(val) {
+  const volDisplay = document.getElementById('vol-display');
+  if (volDisplay) volDisplay.textContent = val + '%';
+  clearTimeout(window._volDebounce);
+  window._volDebounce = setTimeout(() => {
+    sendCmd('volume ' + val);
+  }, 350);
+}

@@ -481,41 +481,75 @@
                   </button>
                 </div>
 
-                <!-- Volume and Audio Filters -->
-                <div class="audio-tweak-row">
-                  <div class="volume-control">
-                    <i class="fa-solid fa-volume-high" id="volume-icon"></i>
-                    <input type="range" id="volume-slider" min="0" max="1000" step="10" value="100" title="Adjust Volume">
+                
+                <!-- ═══ VOLUME & BASS COMMAND CONTROLLER (from dashboard & dashboard sb html) ═══ -->
+                <div class="audio-tweak-row" style="flex-direction: column; gap: 14px; width: 100%; padding: 12px; background: rgba(15, 10, 28, 0.75); border: 1px solid rgba(168, 85, 247, 0.28); border-radius: 16px;">
+                  <!-- Status & Live Volume Row -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span class="status-dot online-dot" id="music-status-dot" style="width: 10px; height: 10px; border-radius: 50%; background: #00e676; box-shadow: 0 0 10px #00e676; display: inline-block;"></span>
+                      <span style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #cbd5e1;" id="music-status-text">CONNECTED</span>
+                      <div class="pill" style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.35); padding: 4px 10px; border-radius: 20px; font-size: 0.76rem; font-weight: 700; color: #c084fc;">
+                        🔊 <span class="val" id="vol-display" style="color: #fbbf24; font-weight: 800;">10000%</span>
+                      </div>
+                    </div>
+
+                    <!-- Quick Volume Presets -->
+                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                      <button type="button" class="btn btn-sm btn-outline" onclick="sendCmd('volume 100')" style="padding: 3px 8px; font-size: 0.72rem;">100%</button>
+                      <button type="button" class="btn btn-sm btn-outline" onclick="sendCmd('volume 500')" style="padding: 3px 8px; font-size: 0.72rem;">500%</button>
+                      <button type="button" class="btn btn-sm btn-outline" onclick="sendCmd('volume 1000')" style="padding: 3px 8px; font-size: 0.72rem;">1000%</button>
+                      <button type="button" class="btn btn-sm btn-outline" onclick="sendCmd('volume 5000')" style="padding: 3px 8px; font-size: 0.72rem; color: #fbbf24; border-color: rgba(251,191,36,0.4);">5000%</button>
+                      <button type="button" class="btn btn-sm btn-primary" onclick="sendCmd('max')" style="padding: 3px 10px; font-size: 0.72rem; background: linear-gradient(135deg, #ef4444, #dc2626); border-color: #ef4444; font-weight: 800;">💀 10000% MAX</button>
+                      <button type="button" class="btn btn-sm btn-primary" onclick="sendCmd('volume 20000')" style="padding: 3px 10px; font-size: 0.72rem; background: linear-gradient(135deg, #a855f7, #ec4899); border-color: #ec4899; font-weight: 800;">💥 20000%</button>
+                    </div>
                   </div>
 
-                  <div class="filter-toggles">
-                    <button class="filter-pill" id="filter-loop-toggle" type="button" onclick="document.getElementById('btn-loop-mode')?.click()" title="Toggle Repeat Loop: Track / Queue / Off" style="border: 1px solid rgba(168, 85, 247, 0.6); color: #c084fc; font-weight: 700; background: rgba(168, 85, 247, 0.15);">
-                      <i class="fa-solid fa-repeat"></i> <span id="filter-loop-label">Loop: OFF</span>
-                    </button>
-                    <button class="filter-pill filter-bass-pill" id="filter-bassboost" data-filter="bassboost" title="Deep 60Hz Sub-Bass Punch Boost">
-                      <i class="fa-solid fa-drum"></i> Bass Boost
-                    </button>
-                    <button class="filter-pill filter-loud-pill" id="filter-extremeloud" data-filter="extremeLoud" title="Massive audio boost and maximum decibels">
-                      <i class="fa-solid fa-fire"></i> Extreme Loud
-                    </button>
-                    <button class="filter-pill filter-packing-pill" id="filter-packing" data-filter="packing" title="Discord overtalk & vocal cutting loud set">
-                      <i class="fa-solid fa-bullhorn"></i> Packing Boost
-                    </button>
-                    <button class="filter-pill" id="filter-clarity" data-filter="clarity" title="Crystal clear audio with low-cut filter">
-                      <i class="fa-solid fa-wand-magic-sparkles"></i> Crystal Clarity
-                    </button>
-                    <button class="filter-pill" id="filter-nightcore" data-filter="nightcore">
-                      <i class="fa-solid fa-bolt"></i> Nightcore
-                    </button>
-                    <button class="filter-pill" id="filter-vaporwave" data-filter="vaporwave">
-                      <i class="fa-solid fa-cloud-moon"></i> Vaporwave
-                    </button>
-                    <button class="filter-pill" id="filter-8d" data-filter="eightD">
-                      <i class="fa-solid fa-headphones"></i> 8D
-                    </button>
+                  <!-- Volume Slider Range (1% to 20,000%) -->
+                  <div class="volume-control" style="width: 100%; display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-volume-high" id="volume-icon" style="color: #fbbf24; font-size: 1.1rem;"></i>
+                    <input type="range" id="volume-slider" min="1" max="20000" step="100" value="10000" title="Adjust Volume (1% - 20000%)" style="flex: 1; accent-color: #fbbf24;" oninput="onVolumeSliderChange(this.value)">
+                  </div>
+
+                  <!-- ═══ 14 QUICK COMMANDS GRID (from dashboard sb html) ═══ -->
+                  <div style="width: 100%; margin-top: 6px;">
+                    <div style="font-family: var(--font-mono); font-size: 0.76rem; letter-spacing: 2px; color: #a688e0; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">
+                      ⚡ Quick Commands
+                    </div>
+                    <div class="cmd-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px;">
+                      <div class="cmd-btn" onclick="sendCmd('stop')"><span class="cmd-icon">⏹️</span><span class="cmd-label">Stop</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('pause')"><span class="cmd-icon">⏸️</span><span class="cmd-label">Pause</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('resume')"><span class="cmd-icon">▶️</span><span class="cmd-label">Resume</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('blast')"><span class="cmd-icon">🔥</span><span class="cmd-label">Blast</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('doubleblast')"><span class="cmd-icon">💥</span><span class="cmd-label">Double</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('superloud')"><span class="cmd-icon">🔊</span><span class="cmd-label">Super</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('forceloud')"><span class="cmd-icon">⚡</span><span class="cmd-label">Force</span></div>
+                      <div class="cmd-btn active" id="cmd-btn-bass" onclick="sendCmd('bassboost')"><span class="cmd-icon">🎵</span><span class="cmd-label">Bass</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('pungi')"><span class="cmd-icon">🐍</span><span class="cmd-label">Pungi</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('loudmode')"><span class="cmd-icon">📢</span><span class="cmd-label">Loud</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('loop')"><span class="cmd-icon">🔄</span><span class="cmd-label">Loop</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('leave')"><span class="cmd-icon">👋</span><span class="cmd-label">Leave</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('max')"><span class="cmd-icon">💀</span><span class="cmd-label">Max</span></div>
+                      <div class="cmd-btn" onclick="sendCmd('status')"><span class="cmd-icon">📊</span><span class="cmd-label">Status</span></div>
+                    </div>
+                  </div>
+
+                  <!-- ═══ CUSTOM COMMAND BAR (from dashboard sb html) ═══ -->
+                  <div style="width: 100%; margin-top: 8px; background: rgba(10, 5, 20, 0.6); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 12px; padding: 12px;">
+                    <div style="font-family: var(--font-mono); font-size: 0.76rem; letter-spacing: 2px; color: #a688e0; font-weight: 700; text-transform: uppercase; margin-bottom: 8px;">
+                      ⌨️ Custom Command
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="text" id="cmd-input" placeholder="play https://youtube.com/... or volume 15000 or channelId or help" onkeydown="if(event.key==='Enter') sendCustom()" style="flex: 1; background: #0a0514; color: #cbb8ff; border: 1px solid #2d1f4a; border-radius: 10px; padding: 10px 14px; font-family: var(--font-mono); font-size: 0.85rem;">
+                      <button class="btn btn-primary" onclick="sendCustom()" style="background: linear-gradient(135deg, #b57cff, #7c4dff); font-weight: 700; padding: 0 18px; letter-spacing: 1px;">
+                        Send ✦
+                      </button>
+                    </div>
+                    <div id="cmd-live-response" style="display: none; margin-top: 8px; font-family: var(--font-mono); font-size: 0.8rem; padding: 8px 12px; border-radius: 8px; background: rgba(0, 230, 118, 0.1); border: 1px solid rgba(0, 230, 118, 0.3); color: #00e676; white-space: pre-wrap;"></div>
                   </div>
                 </div>
               </div>
+            </div>
             </div>
           </div>
 

@@ -294,7 +294,7 @@ class LavalinkClient extends EventEmitter {
         track: { encoded: trackToRepeat.encoded },
         position: 0,
         paused: false,
-        volume: Math.min(1000, player.volume),
+        volume: Math.min(1000, Math.max(10, player.volume)),
         filters: filtersPayload
       }, player.userId).then(() => {
         this.emit('trackStart', { player, track: trackToRepeat, ownerId: player.ownerId, accountId: player.accountId });
@@ -326,7 +326,7 @@ class LavalinkClient extends EventEmitter {
       const filtersPayload = this.buildFiltersPayload(player);
       await this.sendPlayerUpdate(guildId, {
         track: { encoded: nextTrack.encoded },
-        volume: Math.min(1000, player.volume),
+        volume: Math.min(1000, Math.max(10, player.volume)),
         filters: filtersPayload
       }, player.userId);
       player.playing = true;
@@ -577,7 +577,7 @@ class LavalinkClient extends EventEmitter {
         track: { encoded: track.encoded },
         position: 0,
         paused: isPaused,
-        volume: Math.min(1000, player.volume),
+        volume: Math.min(1000, Math.max(10, player.volume)),
         filters: filtersPayload
       }, player.userId);
       player.playing = true;
@@ -638,10 +638,32 @@ class LavalinkClient extends EventEmitter {
 
     // 1. Raw DSP Volume Multiplier (filters.volume in Lavalink v4)
     // Capped at 5.0 max (500%) because lavadsp VolumePcmAudioFilter strictly enforces [0.0 - 5.0]
-    // Combined with player.volume (up to 1000), this achieves 50x (5,000%) amplification without crashing Lavalink
     let volMultiplier = Math.max(0.05, player.volume / 100.0);
     volMultiplier = Math.min(5.0, Math.max(0.05, volMultiplier));
     filtersPayload.volume = Number(volMultiplier.toFixed(2));
+
+    // Support DoubleBlast / Blast / SuperLoud / ForceLoud Volume Multipliers
+    if (player.filters.doubleblast) {
+      filtersPayload.volume = 5.0;
+      filtersPayload.channelMix = { leftToLeft: 3.5, rightToRight: 3.5, leftToRight: 1.0, rightToLeft: 1.0 };
+      filtersPayload.distortion = { sinScale: 0.35, cosScale: 0.35, offset: 0.1, scale: 3.0 };
+    } else if (player.filters.blast) {
+      filtersPayload.volume = 5.0;
+      filtersPayload.channelMix = { leftToLeft: 2.5, rightToRight: 2.5, leftToRight: 0.5, rightToLeft: 0.5 };
+      filtersPayload.distortion = { sinScale: 0.25, cosScale: 0.25, offset: 0.05, scale: 2.0 };
+    } else if (player.filters.forceLoud) {
+      filtersPayload.volume = 5.0;
+      filtersPayload.channelMix = { leftToLeft: 4.0, rightToRight: 4.0, leftToRight: 1.2, rightToLeft: 1.2 };
+    } else if (player.filters.superLoud) {
+      filtersPayload.volume = 5.0;
+      filtersPayload.channelMix = { leftToLeft: 3.0, rightToRight: 3.0, leftToRight: 0.8, rightToLeft: 0.8 };
+    } else if (player.filters.pungi) {
+      filtersPayload.volume = 5.0;
+      filtersPayload.channelMix = { leftToLeft: 2.0, rightToRight: 2.0, leftToRight: 0.6, rightToLeft: 0.6 };
+      filtersPayload.distortion = { sinScale: 0.8, cosScale: 0.7, tanScale: 0.5, offset: 0.2, scale: 3.0 };
+      filtersPayload.rotation = { rotationHz: 0.5 };
+      filtersPayload.timescale = { speed: 1.0, pitch: 1.08, rate: 1.0 };
+    }
 
     // 2. Channel Mixing (Stereo enhancement & maximum loudness gain)
     if (player.filters.extremeLoud || player.volume >= 500) {
@@ -863,7 +885,7 @@ class LavalinkClient extends EventEmitter {
     if (player.userId) {
       try {
         await this.sendPlayerUpdate(guildId, {
-          volume: Math.min(1000, player.volume),
+          volume: Math.min(1000, Math.max(10, player.volume)),
           filters: filtersPayload
         }, player.userId);
       } catch (e) {}
