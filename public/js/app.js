@@ -654,7 +654,10 @@ async function renderVoiceManagerCards() {
 
 async function loadGuildsForVoiceCard(accountId) {
   try {
-    const res = await fetch(`/api/accounts/${accountId}/guilds`);
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch(`/api/accounts/${accountId}/guilds`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
     const data = await res.json();
     if (!data.success) return;
 
@@ -858,7 +861,10 @@ async function handleMusicBotChange() {
     }
     if (!queryBotId) return;
 
-    const res = await fetch(`/api/accounts/${queryBotId}/guilds`);
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch(`/api/accounts/${queryBotId}/guilds`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
     const data = await res.json();
     if (!data.success) return;
 

@@ -269,7 +269,431 @@ botManager.on('botVoice', data => {
 
 // --- REST API ENDPOINTS ---
 app.use('/api/accounts', requireAuth);
-// Allow search without blocking
+app.use('/api/music', requireAuth);
+app.use('/api/actions', requireAuth);
+app.use('/api/guilds', requireAuth);
+
+// 1. Accounts API (Strictly Partitioned by User Credentials)
+// MongoDB Atlas Status Endpoint
+app.get('/api/database/status', (req, res) => {
+  res.json({ success: true, ...mongoDb.getStatus() });
+});
+
+app.get('/api/accounts', async (req, res) => {
+  try {
+    const current = database.getAccounts(req.user.userId);
+    if (current.length === 0 && mongoDb.isConnected) {
+      const restored = await mongoDb.syncFromCloud(req.user.userId);
+      if (restored > 0) {
+        botManager.startAll(req.user.userId).catch(() => {});
+      }
+    }
+  } catch (_) {}
+  res.json({ success: true, accounts: botManager.getAllBotsStatus(req.user.userId) });
+});
+
+app.post('/api/accounts', async (req, res) => {
+  try {
+    const { token, label, autoStart, proxy } = req.body;
+    if (!token || !token.trim()) {
+      return res.status(400).json({ success: false, error: 'Token is required' });
+    }
+
+    // Enforce bot limit per credentials (e.g. 10 bots limit) for this specific user
+    const maxLimit = (req.user && typeof req.user.botLimit === 'number') ? req.user.botLimit : 10;
+    const userAccounts = database.getAccounts(req.user.userId);
+    if (userAccounts.length >= maxLimit) {
+      return res.status(400).json({
+        success: false,
+        error: `Bot limit reached! Your login credentials allow a maximum of ${maxLimit} bots (Currently using: ${userAccounts.length}/${maxLimit}).`
+      });
+    }
+
+    const newAcc = database.addAccount({
+      token,
+      label,
+      proxy: proxy ? proxy.trim() : null,
+      autoStart,
+      ownerId: req.user.userId,
+      ownerUsername: req.user.username
+    });
+    logger.success('DASHBOARD', `User [${req.user.username}] added account: ${newAcc.label} (${userAccounts.length + 1}/${maxLimit})`);
+
+    // Auto-start if requested
+    if (newAcc.autoStart !== false) {
+      botManager.startAccount(newAcc.id).catch(e => {
+        logger.error('BOT', `Initial start failed: ${e.message}`);
+      });
+    }
+
+    res.json({ success: true, account: newAcc });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Mass Token Import / Token Manager (Paste all tokens at once)
+app.post('/api/accounts/mass', async (req, res) => {
+  try {
+    const { tokens, autoStart = true } = req.body;
+    if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({ success: false, error: 'Tokens array is required' });
+    }
+
+    const maxLimit = (req.user && typeof req.user.botLimit === 'number') ? req.user.botLimit : 10;
+    const currentAccounts = database.getAccounts(req.user.userId);
+    const availableSlots = Math.max(0, maxLimit - currentAccounts.length);
+
+    if (availableSlots <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Bot limit reached! Your credentials allow a maximum of ${maxLimit} bots (Currently using: ${currentAccounts.length}/${maxLimit}).`
+      });
+    }
+
+    const added = [];
+    const skipped = [];
+    const errors = [];
+
+    const existingTokens = new Set(currentAccounts.map(a => a.token.trim()));
+    const existingUserIds = new Set();
+    currentAccounts.forEach(a => {
+      try {
+        const payload = a.token.split('.')[0];
+        const uid = Buffer.from(payload, 'base64').toString('utf8');
+        if (/^\d{17,20}$/.test(uid)) existingUserIds.add(uid);
+      } catch (e) {}
+    });
+
+    const seenInBatch = new Set();
+
+    for (let i = 0; i < tokens.length; i++) {
+      if (added.length >= availableSlots) {
+        skipped.push({ token: tokens[i], reason: `Quota limit (${maxLimit}) reached` });
+        continue;
+      }
+
+      const rawToken = typeof tokens[i] === 'string' ? tokens[i].trim() : (tokens[i]?.token || '').trim();
+      if (!rawToken || rawToken.length < 25) continue;
+
+      const tokenParts = rawToken.split('.');
+      if (tokenParts.length < 3) {
+        errors.push({ token: rawToken, reason: 'Invalid token format (must have 3 parts separated by dots)' });
+        continue;
+      }
+
+      let tokenUid = null;
+      try {
+        const decoded = Buffer.from(tokenParts[0], 'base64').toString('utf8');
+        if (/^\d{17,20}$/.test(decoded)) tokenUid = decoded;
+      } catch (e) {}
+
+      if (tokenUid && (existingUserIds.has(tokenUid) || seenInBatch.has(tokenUid))) {
+        skipped.push({ token: rawToken, reason: `Account already added (Discord User ID: ${tokenUid})` });
+        continue;
+      }
+
+      if (existingTokens.has(rawToken) || seenInBatch.has(rawToken)) {
+        skipped.push({ token: rawToken, reason: 'Duplicate token' });
+        continue;
+      }
+
+      if (tokenUid) seenInBatch.add(tokenUid);
+      seenInBatch.add(rawToken);
+
+      try {
+        const defaultLabel = `Bot ${currentAccounts.length + added.length + 1}`;
+        const label = (typeof tokens[i] === 'object' && tokens[i]?.label) ? tokens[i].label : defaultLabel;
+        const newAcc = database.addAccount({
+          token: rawToken,
+          label,
+          proxy: null,
+          autoStart: autoStart !== false,
+          ownerId: req.user.userId,
+          ownerUsername: req.user.username
+        });
+
+        existingTokens.add(rawToken);
+        if (tokenUid) existingUserIds.add(tokenUid);
+        added.push(newAcc);
+
+        if (newAcc.autoStart !== false) {
+          const delay = added.length * 1500;
+          setTimeout(() => {
+            botManager.startAccount(newAcc.id).catch(e => {
+              logger.error('BOT', `Mass initial start failed: ${e.message}`);
+            });
+          }, delay);
+        }
+      } catch (err) {
+        errors.push({ token: rawToken, reason: err.message });
+      }
+    }
+
+    logger.success('DASHBOARD', `User [${req.user.username}] mass-added ${added.length} accounts (${skipped.length} skipped, ${errors.length} errors)`);
+
+    res.json({
+      success: true,
+      addedCount: added.length,
+      skippedCount: skipped.length,
+      errorCount: errors.length,
+      added,
+      skipped,
+      errors
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get all saved tokens for this user (for Token Manager Load)
+app.get('/api/accounts/tokens', (req, res) => {
+  try {
+    const accounts = database.getAccounts(req.user.userId);
+    const tokens = accounts.map(a => a.token).filter(Boolean);
+    res.json({ success: true, count: tokens.length, tokens });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/accounts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const acc = database.getAccount(id, req.user.userId);
+    if (!acc) {
+      return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    }
+    await botManager.stopAccount(id);
+    database.removeAccount(id, req.user.userId);
+    logger.info('DASHBOARD', `User [${req.user.username}] removed account: ${id}`);
+    broadcast('accountRemoved', { id, ownerId: req.user.userId });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/accounts/:id/start', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    await botManager.startAccount(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/accounts/:id/stop', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    await botManager.stopAccount(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/accounts/start-all', async (req, res) => {
+  await botManager.startAll(req.user.userId);
+  res.json({ success: true });
+});
+
+app.post('/api/accounts/stop-all', async (req, res) => {
+  await botManager.stopAll(req.user.userId);
+  res.json({ success: true });
+});
+
+// Mass Voice: Join ALL accounts to a Voice Channel & Enable 24/7
+app.post('/api/accounts/voice/join-all', async (req, res) => {
+  try {
+    const { channelId, guildId, keep247, selfMute, selfDeaf } = req.body;
+    if (!channelId || !channelId.trim()) {
+      return res.status(400).json({ success: false, error: 'Voice Channel ID is required' });
+    }
+    const result = await botManager.joinAllToVoice(req.user.userId, channelId.trim(), {
+      guildId,
+      keep247: keep247 !== false,
+      selfMute: !!selfMute,
+      selfDeaf: !!selfDeaf
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Mass Voice: Leave ALL accounts from Voice
+app.post('/api/accounts/voice/leave-all', async (req, res) => {
+  try {
+    const { disable247 = true } = req.body;
+    const result = await botManager.leaveAllVoice(req.user.userId, disable247);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Camera feature removed per request
+app.post('/api/accounts/:id/camera', (req, res) => res.json({ success: true, message: 'WebCam feature disabled' }));
+app.post('/api/accounts/camera/all', (req, res) => res.json({ success: true, message: 'WebCam feature disabled' }));
+
+app.post('/api/accounts/:id/presence', (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const { status, activity } = req.body;
+    botManager.setStatus(req.params.id, status, activity);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/accounts/:id/guilds', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const guilds = await botManager.getGuildsAndChannels(req.params.id);
+    res.json({ success: true, guilds });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get deduplicated summary of all joined servers across online bots
+app.get('/api/guilds/all', requireAuth, (req, res) => {
+  try {
+    const userId = req.user?.userId || null;
+    const guilds = botManager.getAllGuildsSummary(userId);
+    res.json({ success: true, guilds });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Permanent Server Leave for a Single Bot (with proxy rotation & 24/7 cleanup)
+app.post('/api/accounts/:id/guilds/:guildId/leave', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.userId || null;
+    const acc = database.getAccount(req.params.id, userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const useProxy = req.body.useProxy !== false;
+    const result = await botManager.leaveGuild(req.params.id, req.params.guildId, { useProxy });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Permanent Server Leave for ALL BOTS (Mass Leave with proxy rotation & jitter stagger)
+app.post('/api/guilds/:guildId/leave-all', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.userId || null;
+    const useProxy = req.body.useProxy !== false;
+    const result = await botManager.leaveGuildAllBots(userId, req.params.guildId, { useProxy });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. Voice & 24/7 API
+app.post('/api/accounts/:id/voice/join', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const { channelId, selfMute, selfDeaf } = req.body;
+    if (!channelId) {
+      return res.status(400).json({ success: false, error: 'Voice channel ID is required' });
+    }
+    const voiceState = await botManager.joinVoice(req.params.id, channelId, { selfMute, selfDeaf });
+    res.json({ success: true, voiceState });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/accounts/:id/voice/leave', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    await botManager.leaveVoice(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/accounts/:id/voice/247', async (req, res) => {
+  try {
+    const acc = database.getAccount(req.params.id, req.user.userId);
+    if (!acc) return res.status(404).json({ success: false, error: 'Account not found or access denied.' });
+    const { enabled, guildId, channelId, selfMute, selfDeaf } = req.body;
+    const config = await botManager.set247(req.params.id, {
+      enabled,
+      guildId,
+      channelId,
+      selfMute,
+      selfDeaf
+    });
+    res.json({ success: true, voice247: config });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Lavalink & Music API
+app.get('/api/lavalink/status', (req, res) => {
+  res.json({
+    success: true,
+    node: {
+      name: lavalink.name,
+      host: lavalink.host,
+      port: lavalink.port,
+      secure: lavalink.secure,
+      connected: lavalink.connected,
+      sessionId: lavalink.sessionId,
+      stats: lavalink.stats
+    }
+  });
+});
+
+app.post('/api/lavalink/config', async (req, res) => {
+  try {
+    const { url, name, auth, secure } = req.body;
+    const newConfig = {
+      url: url || lavalink.host + ':' + lavalink.port,
+      name: name || lavalink.name,
+      auth: auth || lavalink.auth,
+      secure: !!secure
+    };
+
+    database.updateSettings({ lavalink: newConfig });
+    lavalink.updateConfig(newConfig);
+    if (lavalink.ws) lavalink.ws.close();
+    lavalink.connect();
+
+    logger.success('LAVALINK', `Node settings updated: ${newConfig.name} (${newConfig.url})`);
+    res.json({ success: true, config: newConfig });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/music/search', async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ success: false, error: 'Query parameter q required' });
+    const result = await lavalink.loadTracks(q);
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Custom Voice Recording & MP3 Audio Play/Queue Endpoint
 app.post('/api/music/custom-audio', async (req, res) => {
   try {
