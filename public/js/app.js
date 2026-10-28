@@ -1025,7 +1025,10 @@ async function executeMusicSearch() {
 
   showToast('Searching for music...', 'info');
   try {
-    const res = await fetch(`/api/music/search?q=${encodeURIComponent(query)}`);
+    const token = localStorage.getItem('exc_user_token') || localStorage.getItem('token') || '';
+    const res = await fetch(`/api/music/search?q=${encodeURIComponent(query)}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
     const data = await res.json();
     if (!data.success || !data.result.tracks || data.result.tracks.length === 0) {
       return showToast('No tracks found for that search', 'warn');

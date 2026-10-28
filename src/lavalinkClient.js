@@ -243,33 +243,24 @@ class LavalinkClient extends EventEmitter {
         break;
 
       case 'TrackExceptionEvent':
-        logger.error('MUSIC', `Track exception: ${event.exception?.message || 'Unknown'}`);
-        player._exceptionAttempts = (player._exceptionAttempts || 0) + 1;
-        if (player._exceptionAttempts <= 1 && player.currentTrack) {
-          logger.warn('MUSIC', `Attempting stream recovery after track exception [bot: ${player.accountId || sessionUserId}]...`);
+        logger.warn('MUSIC', `Track stream exception: ${event.exception?.message || 'Unknown'}. Keeping position...`);
+        if (player.currentTrack) {
           const resumePos = Math.max(0, player.position || 0);
           this.sendPlayerUpdate(guildId, {
             position: resumePos,
             paused: false
           }, player.userId).catch(() => {});
-        } else {
-          player._exceptionAttempts = 0;
-          this.playNext(player);
         }
         break;
 
       case 'TrackStuckEvent':
-        logger.warn('MUSIC', `Track stuck at ${event.thresholdMs}ms for guild ${guildId} [bot: ${player.accountId || sessionUserId}]. Attempting non-destructive buffer recovery...`);
-        player._stuckAttempts = (player._stuckAttempts || 0) + 1;
-        if (player._stuckAttempts <= 2 && player.currentTrack) {
+        logger.warn('MUSIC', `Track buffer stall at ${event.thresholdMs}ms. Resuming smoothly without restart...`);
+        if (player.currentTrack) {
           const resumePos = Math.max(0, player.position || 0);
           this.sendPlayerUpdate(guildId, {
             position: resumePos,
             paused: false
           }, player.userId).catch(() => {});
-        } else {
-          player._stuckAttempts = 0;
-          this.playNext(player);
         }
         break;
 
@@ -280,10 +271,39 @@ class LavalinkClient extends EventEmitter {
   }
 
   handleTrackEnd(player, event) {
-    player.playing = false;
-    if (event.reason === 'replaced') return;
+    // 1. Never skip or restart on non-finish reasons (replaced, stopped, cleanup)
+    if (event.reason === 'replaced' || event.reason === 'stopped' || event.reason === 'cleanup') {
+      return;
+    }
 
-    // Continuous Loop for single track or queue with single track (applies to music & uploaded MP3s)
+    // 2. Prevent premature track breaks in the middle of playback
+    const trackDuration = player.currentTrack?.info?.length || 0;
+    const currentPos = player.position || 0;
+    const isActuallyFinished = event.reason === 'finished' || (trackDuration > 0 && currentPos >= (trackDuration - 4000));
+
+    // If track stopped prematurely in the middle of playback (>4 seconds remaining)
+    if (!isActuallyFinished && trackDuration > 10000 && currentPos < (trackDuration - 4000)) {
+      logger.warn('MUSIC', `Premature track break prevented at ${Math.round(currentPos/1000)}s / ${Math.round(trackDuration/1000)}s. Resuming audio stream...`);
+      player.playing = true;
+      player.paused = false;
+      return this.sendPlayerUpdate(player.guildId, {
+        position: currentPos,
+        paused: false
+      }, player.userId).catch(() => {});
+    }
+
+    // 3. Multi-Bot De-duplication: Ensure only 1 bot in the guild handles track end to keep all bots 100% in sync
+    const now = Date.now();
+    if (!this._lastTrackEndMap) this._lastTrackEndMap = new Map();
+    const lastEnd = this._lastTrackEndMap.get(player.guildId) || 0;
+    if (now - lastEnd < 4000) {
+      return; // Already processed for this guild!
+    }
+    this._lastTrackEndMap.set(player.guildId, now);
+
+    player.playing = false;
+
+    // 4. Repeat Loop for track
     if ((player.loop === 'track' || (player.loop === 'queue' && player.queue.length === 0)) && player.currentTrack) {
       const trackToRepeat = player.currentTrack;
       player.position = 0;
@@ -369,12 +389,27 @@ class LavalinkClient extends EventEmitter {
 
   async loadTracks(identifier) {
     let cleanId = identifier.trim();
-    if (!/^https?:\/\//i.test(cleanId) && !cleanId.includes(':')) {
-      cleanId = `ytsearch:${cleanId}`;
-    }
+    const isDirectUrl = /^https?:\/\//i.test(cleanId) || cleanId.includes(':');
 
-    const path = `/v4/loadtracks?identifier=${encodeURIComponent(cleanId)}`;
-    const result = await this.apiRequest(path, 'GET');
+    let result = null;
+    if (isDirectUrl) {
+      result = await this.apiRequest(`/v4/loadtracks?identifier=${encodeURIComponent(cleanId)}`, 'GET');
+    } else {
+      // Fallback chain: ytsearch -> ytmsearch -> scsearch
+      const searchPrefixes = ['ytsearch', 'ytmsearch', 'scsearch'];
+      for (const prefix of searchPrefixes) {
+        try {
+          const res = await this.apiRequest(`/v4/loadtracks?identifier=${encodeURIComponent(`${prefix}:${cleanId}`)}`, 'GET');
+          if (res && res.data && (Array.isArray(res.data) ? res.data.length > 0 : (res.data.tracks?.length > 0 || res.data.encoded))) {
+            result = res;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (!result) {
+        result = await this.apiRequest(`/v4/loadtracks?identifier=${encodeURIComponent(`ytsearch:${cleanId}`)}`, 'GET');
+      }
+    }
     
     let tracks = [];
     let playlistInfo = null;
@@ -557,7 +592,7 @@ class LavalinkClient extends EventEmitter {
     if (!session || !session.sessionId) {
       throw new Error('Lavalink session not established for this bot');
     }
-    const path = `/v4/sessions/${session.sessionId}/players/${guildId}?noReplace=false`;
+    const path = `/v4/sessions/${session.sessionId}/players/${guildId}?noReplace=${data.track ? "false" : "true"}`;
     return await this.apiRequest(path, 'PATCH', data);
   }
 
