@@ -2200,7 +2200,13 @@ async function loadSavedTokensIntoManager() {
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load tokens');
 
-    const tokensList = data.tokens || [];
+    let tokensList = data.tokens || [];
+    if (tokensList.length === 0) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('exc_saved_tokens_cache') || '[]');
+        if (cached.length > 0) tokensList = cached;
+      } catch (_) {}
+    }
     if (textarea) {
       textarea.value = tokensList.join('\n');
       updateTokenManagerCounters();

@@ -150,6 +150,10 @@ class Database {
 
     this.accounts.push(newAcc);
     this.saveJSON(config.accountsFile, this.accounts);
+    try {
+      const mongoDb = require('./mongoDb');
+      mongoDb.saveAccount(newAcc).catch(() => {});
+    } catch (_) {}
     return newAcc;
   }
 
@@ -163,6 +167,10 @@ class Database {
       updatedAt: new Date().toISOString()
     };
 
+    try {
+      const mongoDb = require('./mongoDb');
+      mongoDb.saveAccount(this.accounts[idx]).catch(() => {});
+    } catch (_) {}
     this.saveJSON(config.accountsFile, this.accounts);
     return this.accounts[idx];
   }
@@ -173,6 +181,10 @@ class Database {
 
     this.accounts.splice(idx, 1);
     this.saveJSON(config.accountsFile, this.accounts);
+    try {
+      const mongoDb = require('./mongoDb');
+      mongoDb.deleteAccount(id, userId).catch(() => {});
+    } catch (_) {}
     return true;
   }
 

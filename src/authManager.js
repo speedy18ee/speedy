@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const config = require('./config');
 const logger = require('./logger');
+const mongoDb = require('./mongoDb');
 
 class AuthManager {
   constructor() {
@@ -80,6 +81,9 @@ class AuthManager {
   }
 
   saveUsers(triggerSync = true) {
+    try {
+      for (const u of this.users) mongoDb.saveUser(u).catch(() => {});
+    } catch (_) {}
     try {
       const tmp = `${this.usersFile}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(this.users, null, 2), 'utf-8');

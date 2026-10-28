@@ -5,6 +5,9 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 const config = require('./src/config');
 const database = require('./src/database');
+const mongoDb = require('./src/mongoDb');
+// Connect to MongoDB Atlas
+mongoDb.connect().catch(() => {});
 const logger = require('./src/logger');
 const authManager = require('./src/authManager');
 const LavalinkClient = require('./src/lavalinkClient');
@@ -222,6 +225,7 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
 const currentSettings = database.getSettings();
 const lavalink = new LavalinkClient(currentSettings.lavalink || config.defaultNode);
 const botManager = new BotManager(lavalink);
+global.botManager = botManager;
 
 // Start Lavalink connection
 lavalink.connect();
@@ -270,7 +274,21 @@ app.use('/api/actions', requireAuth);
 app.use('/api/guilds', requireAuth);
 
 // 1. Accounts API (Strictly Partitioned by User Credentials)
-app.get('/api/accounts', (req, res) => {
+// MongoDB Atlas Status Endpoint
+app.get('/api/database/status', (req, res) => {
+  res.json({ success: true, ...mongoDb.getStatus() });
+});
+
+app.get('/api/accounts', async (req, res) => {
+  try {
+    const current = database.getAccounts(req.user.userId);
+    if (current.length === 0 && mongoDb.isConnected) {
+      const restored = await mongoDb.syncFromCloud(req.user.userId);
+      if (restored > 0) {
+        botManager.startAll(req.user.userId).catch(() => {});
+      }
+    }
+  } catch (_) {}
   res.json({ success: true, accounts: botManager.getAllBotsStatus(req.user.userId) });
 });
 
